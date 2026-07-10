@@ -164,6 +164,7 @@ router.post("/", (req, res) => {
     important,
     notes,
     my_day: myDay,
+    remind_at: remindAt,
   } = req.body;
 
   const list = resolveList(req.body.list_id, req.userId);
@@ -185,8 +186,8 @@ router.post("/", (req, res) => {
 
   const result = db
     .prepare(
-      `INSERT INTO todos (user_id, list_id, title, due_date, priority, recurrence, created_by, important, notes, my_day_date)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO todos (user_id, list_id, title, due_date, priority, recurrence, created_by, important, notes, my_day_date, remind_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       list.user_id,
@@ -198,7 +199,8 @@ router.post("/", (req, res) => {
       req.userId,
       important ? 1 : 0,
       notes?.trim() || null,
-      myDay ? todayStr() : null
+      myDay ? todayStr() : null,
+      remindAt || null
     );
 
   const todo = getHydratedTodo(result.lastInsertRowid);
@@ -226,6 +228,7 @@ router.patch("/:id", (req, res) => {
   const important = req.body.important !== undefined ? (req.body.important ? 1 : 0) : todo.important;
   const notes = req.body.notes !== undefined ? req.body.notes?.trim() || null : todo.notes;
   const myDayDate = req.body.my_day !== undefined ? (req.body.my_day ? todayStr() : null) : todo.my_day_date;
+  const remindAt = req.body.remind_at !== undefined ? req.body.remind_at || null : todo.remind_at;
 
   let listId = todo.list_id;
   if (req.body.list_id !== undefined) {
@@ -245,12 +248,14 @@ router.patch("/:id", (req, res) => {
 
   const dueDateChanged = dueDate !== todo.due_date;
   const reminderCount = dueDateChanged ? 0 : todo.reminder_count;
+  // A new remind-me time should fire again even if the old one already did.
+  const reminded = remindAt !== todo.remind_at ? 0 : todo.reminded;
 
   db.prepare(
     `UPDATE todos SET title = ?, done = ?, due_date = ?, priority = ?, recurrence = ?, reminder_count = ?,
-     important = ?, notes = ?, my_day_date = ?, list_id = ?
+     important = ?, notes = ?, my_day_date = ?, list_id = ?, remind_at = ?, reminded = ?
      WHERE id = ?`
-  ).run(title, done, dueDate, priority, recurrence, reminderCount, important, notes, myDayDate, listId, todo.id);
+  ).run(title, done, dueDate, priority, recurrence, reminderCount, important, notes, myDayDate, listId, remindAt, reminded, todo.id);
 
   // Just completed a recurring task with a due date: schedule the next occurrence.
   if (done === 1 && todo.done === 0 && recurrence !== "none" && dueDate) {

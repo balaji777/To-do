@@ -53,6 +53,16 @@ describe("todos routes", () => {
       expect(res.body.my_day_date).toBeTruthy();
     });
 
+    it("accepts a remind_at time", async () => {
+      const res = await authed(request(app).post("/api/todos")).send({
+        title: "Call the bank",
+        remind_at: "2099-06-01T09:00",
+      });
+      expect(res.status).toBe(201);
+      expect(res.body.remind_at).toBe("2099-06-01T09:00");
+      expect(res.body.reminded).toBe(0);
+    });
+
     it("rejects a missing title", async () => {
       const res = await authed(request(app).post("/api/todos")).send({});
       expect(res.status).toBe(400);
@@ -220,6 +230,41 @@ describe("todos routes", () => {
 
       const removed = await authed(request(app).patch(`/api/todos/${created.body.id}`)).send({ my_day: false });
       expect(removed.body.my_day_date).toBeNull();
+    });
+
+    it("sets and clears a remind-me time", async () => {
+      const created = await authed(request(app).post("/api/todos")).send({ title: "Original" });
+      const set = await authed(request(app).patch(`/api/todos/${created.body.id}`)).send({
+        remind_at: "2099-06-01T09:00",
+      });
+      expect(set.body.remind_at).toBe("2099-06-01T09:00");
+
+      const cleared = await authed(request(app).patch(`/api/todos/${created.body.id}`)).send({ remind_at: null });
+      expect(cleared.body.remind_at).toBeNull();
+    });
+
+    it("resets the reminded flag when remind_at changes", async () => {
+      const created = await authed(request(app).post("/api/todos")).send({
+        title: "Original",
+        remind_at: "2020-01-01T09:00",
+      });
+      db.prepare("UPDATE todos SET reminded = 1 WHERE id = ?").run(created.body.id);
+
+      const res = await authed(request(app).patch(`/api/todos/${created.body.id}`)).send({
+        remind_at: "2099-06-01T09:00",
+      });
+      expect(res.body.reminded).toBe(0);
+    });
+
+    it("keeps the reminded flag when remind_at is untouched", async () => {
+      const created = await authed(request(app).post("/api/todos")).send({
+        title: "Original",
+        remind_at: "2020-01-01T09:00",
+      });
+      db.prepare("UPDATE todos SET reminded = 1 WHERE id = ?").run(created.body.id);
+
+      const res = await authed(request(app).patch(`/api/todos/${created.body.id}`)).send({ title: "Renamed" });
+      expect(res.body.reminded).toBe(1);
     });
 
     it("moves a todo to a different list on the same account", async () => {

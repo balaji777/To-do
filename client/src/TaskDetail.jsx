@@ -97,6 +97,25 @@ export default function TaskDetail({ todo, token, onClose, onUpdate, onDelete })
         </div>
 
         <div className="mb-4">
+          <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-400">Remind me</label>
+          <input
+            type="datetime-local"
+            value={todo.remind_at || ""}
+            onClick={openDatePicker}
+            onChange={(e) => patch({ remind_at: e.target.value || null })}
+            className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-slate-600 dark:bg-slate-900 dark:text-white"
+          />
+          {todo.remind_at && (
+            <button
+              onClick={() => patch({ remind_at: null })}
+              className="mt-1 text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+            >
+              Clear reminder
+            </button>
+          )}
+        </div>
+
+        <div className="mb-4">
           <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-400">Priority</label>
           <select
             value={todo.priority}

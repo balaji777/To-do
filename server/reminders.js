@@ -1,6 +1,6 @@
 import cron from "node-cron";
 import db from "./db.js";
-import { sendReminderEmail } from "./email.js";
+import { sendReminderEmail, sendRemindMeEmail } from "./email.js";
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -44,9 +44,43 @@ export async function checkReminders() {
   }
 }
 
+// "Remind me" values come from a datetime-local input with no timezone, so compare
+// against the server's local wall-clock time in the same YYYY-MM-DDTHH:MM shape
+// (string comparison is safe for this format).
+function localDateTimeStr() {
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
+}
+
+export async function checkRemindMe() {
+  const todos = db
+    .prepare(
+      `SELECT todos.*, users.email AS user_email, users.username AS user_username, users.nickname AS user_nickname
+       FROM todos
+       JOIN users ON users.id = todos.user_id
+       WHERE todos.done = 0 AND todos.reminded = 0 AND todos.remind_at IS NOT NULL AND todos.remind_at <= ?`
+    )
+    .all(localDateTimeStr());
+
+  for (const todo of todos) {
+    await sendRemindMeEmail(
+      { email: todo.user_email, username: todo.user_username, nickname: todo.user_nickname },
+      todo
+    );
+    db.prepare("UPDATE todos SET reminded = 1 WHERE id = ?").run(todo.id);
+  }
+}
+
 export function startReminderScheduler() {
-  // Runs daily at 9am server time.
+  // Due-date escalation runs daily at 9am server time.
   cron.schedule("0 9 * * *", () => {
     checkReminders().catch((err) => console.error("Reminder check failed:", err));
+  });
+
+  // "Remind me" times are minute-precise, so poll every minute (cheap indexed-ish
+  // query against a small SQLite table).
+  cron.schedule("* * * * *", () => {
+    checkRemindMe().catch((err) => console.error("Remind-me check failed:", err));
   });
 }

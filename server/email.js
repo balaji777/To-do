@@ -194,6 +194,22 @@ export function sendVerificationEmail(user, token) {
   });
 }
 
+export function sendRemindMeEmail(user, todo) {
+  const title = escapeHtml(todo.title);
+  return send({
+    to: user.email,
+    subject: `Reminder: ${todo.title}`,
+    html: layout({
+      heading: "Reminder",
+      bodyHtml: `
+        <p style="margin:0 0 8px;color:#334155;">Hi ${greetingName(user)}, you asked to be reminded about:</p>
+        <p style="margin:0;font-size:17px;font-weight:600;color:#0f172a;">${title}</p>
+        ${taskMetaTable(todo)}
+      `,
+    }),
+  });
+}
+
 export function sendReminderEmail(user, todo, reminderNumber) {
   const title = escapeHtml(todo.title);
   const label = REMINDER_LABELS[reminderNumber] || "Reminder";
