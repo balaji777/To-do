@@ -185,6 +185,7 @@ export function createDb(dbPath) {
   ensureColumn("todos", "my_day_date", "TEXT");
   ensureColumn("todos", "remind_at", "TEXT");
   ensureColumn("todos", "reminded", "INTEGER NOT NULL DEFAULT 0");
+  ensureColumn("todos", "assigned_to", "INTEGER");
 
   // One-time backfill: every user gets a default "Tasks" list, and every todo that
   // predates the lists table gets attached to its owner's default list. Idempotent -

@@ -34,6 +34,7 @@ export const api = {
   getMyDay: (token) => request("/todos/my-day", { token }),
   getImportant: (token) => request("/todos/important", { token }),
   getPlanned: (token) => request("/todos/planned", { token }),
+  getAssignedToMe: (token) => request("/todos/assigned-to-me", { token }),
   addTodo: (token, todo) => request("/todos", { method: "POST", body: todo, token }),
   updateTodo: (token, id, changes) => request(`/todos/${id}`, { method: "PATCH", body: changes, token }),
   deleteTodo: (token, id) => request(`/todos/${id}`, { method: "DELETE", token }),

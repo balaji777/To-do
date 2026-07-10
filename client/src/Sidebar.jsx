@@ -199,6 +199,7 @@ export default function Sidebar({
         }
         {smartButton("important", "Important", "★")}
         {smartButton("planned", "Planned", "📅")}
+        {smartButton("assigned", "Assigned to me", "👤")}
       </div>
 
       <div className="space-y-3">

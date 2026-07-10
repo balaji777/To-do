@@ -63,6 +63,18 @@ describe("todos routes", () => {
       expect(res.body.reminded).toBe(0);
     });
 
+    it("accepts assigning to a list member", async () => {
+      const res = await authed(request(app).post("/api/todos")).send({ title: "x", assigned_to: user.id });
+      expect(res.status).toBe(201);
+      expect(res.body.assigned_to).toBe(user.id);
+    });
+
+    it("rejects assigning to a non-member", async () => {
+      const stranger = seedUser();
+      const res = await authed(request(app).post("/api/todos")).send({ title: "x", assigned_to: stranger.id });
+      expect(res.status).toBe(400);
+    });
+
     it("rejects a missing title", async () => {
       const res = await authed(request(app).post("/api/todos")).send({});
       expect(res.status).toBe(400);
@@ -199,6 +211,69 @@ describe("todos routes", () => {
     });
   });
 
+  describe("GET /api/todos/assigned-to-me", () => {
+    it("returns open tasks assigned to me on my own lists", async () => {
+      await authed(request(app).post("/api/todos")).send({ title: "Mine", assigned_to: user.id });
+      await authed(request(app).post("/api/todos")).send({ title: "Unassigned" });
+
+      const res = await authed(request(app).get("/api/todos/assigned-to-me"));
+      expect(res.status).toBe(200);
+      expect(res.body.map((t) => t.title)).toEqual(["Mine"]);
+    });
+
+    it("includes tasks assigned to me on lists shared with me", async () => {
+      const owner = seedUser();
+      const ownerToken = signTestToken(owner.id);
+      const sharedList = seedList(owner.id, { name: "Shared" });
+      seedListShare(sharedList.id, user.id, "accepted");
+      await request(app)
+        .post("/api/todos")
+        .set("Authorization", `Bearer ${ownerToken}`)
+        .send({ title: "Do this one", list_id: sharedList.id, assigned_to: user.id });
+
+      const res = await authed(request(app).get("/api/todos/assigned-to-me"));
+      expect(res.body.map((t) => t.title)).toEqual(["Do this one"]);
+      expect(res.body[0].list_name).toBe("Shared");
+    });
+
+    it("excludes done tasks and tasks assigned to someone else", async () => {
+      const other = seedUser();
+      const otherList = seedList(user.id, { name: "Mixed" });
+      seedListShare(otherList.id, other.id, "accepted");
+
+      const done = await authed(request(app).post("/api/todos")).send({
+        title: "Done",
+        list_id: otherList.id,
+        assigned_to: user.id,
+      });
+      await authed(request(app).patch(`/api/todos/${done.body.id}`)).send({ done: true });
+      await authed(request(app).post("/api/todos")).send({
+        title: "Theirs",
+        list_id: otherList.id,
+        assigned_to: other.id,
+      });
+
+      const res = await authed(request(app).get("/api/todos/assigned-to-me"));
+      expect(res.body).toEqual([]);
+    });
+
+    it("excludes tasks on lists I no longer have access to", async () => {
+      const owner = seedUser();
+      const ownerToken = signTestToken(owner.id);
+      const sharedList = seedList(owner.id, { name: "Shared" });
+      const share = seedListShare(sharedList.id, user.id, "accepted");
+      await request(app)
+        .post("/api/todos")
+        .set("Authorization", `Bearer ${ownerToken}`)
+        .send({ title: "Was mine", list_id: sharedList.id, assigned_to: user.id });
+
+      db.prepare("DELETE FROM list_shares WHERE id = ?").run(share.id);
+
+      const res = await authed(request(app).get("/api/todos/assigned-to-me"));
+      expect(res.body).toEqual([]);
+    });
+  });
+
   describe("PATCH /api/todos/:id", () => {
     it("updates fields", async () => {
       const created = await authed(request(app).post("/api/todos")).send({ title: "Original" });
@@ -265,6 +340,37 @@ describe("todos routes", () => {
 
       const res = await authed(request(app).patch(`/api/todos/${created.body.id}`)).send({ title: "Renamed" });
       expect(res.body.reminded).toBe(1);
+    });
+
+    it("assigns and unassigns a list member", async () => {
+      const owner = seedUser();
+      const ownerToken = signTestToken(owner.id);
+      const sharedList = seedList(owner.id, { name: "Shared" });
+      seedListShare(sharedList.id, user.id, "accepted");
+      const created = await request(app)
+        .post("/api/todos")
+        .set("Authorization", `Bearer ${ownerToken}`)
+        .send({ title: "Team task", list_id: sharedList.id });
+
+      const assigned = await authed(request(app).patch(`/api/todos/${created.body.id}`)).send({
+        assigned_to: user.id,
+      });
+      expect(assigned.status).toBe(200);
+      expect(assigned.body.assigned_to).toBe(user.id);
+
+      const unassigned = await authed(request(app).patch(`/api/todos/${created.body.id}`)).send({
+        assigned_to: null,
+      });
+      expect(unassigned.body.assigned_to).toBeNull();
+    });
+
+    it("rejects assigning a non-member", async () => {
+      const stranger = seedUser();
+      const created = await authed(request(app).post("/api/todos")).send({ title: "x" });
+      const res = await authed(request(app).patch(`/api/todos/${created.body.id}`)).send({
+        assigned_to: stranger.id,
+      });
+      expect(res.status).toBe(400);
     });
 
     it("moves a todo to a different list on the same account", async () => {

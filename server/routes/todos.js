@@ -156,6 +156,23 @@ router.get("/planned", (req, res) => {
   res.json(getSmartView(req.userId, "todos.due_date IS NOT NULL AND todos.done = 0"));
 });
 
+// Unlike the other smart views, this one spans shared lists too: a task assigned to me
+// on someone else's list should show up here, as long as I still have access to it.
+router.get("/assigned-to-me", (req, res) => {
+  const todos = db
+    .prepare(
+      `${TODO_SELECT_WITH_LIST}
+       WHERE todos.assigned_to = ? AND todos.done = 0
+         AND (lists.user_id = ? OR EXISTS (
+           SELECT 1 FROM list_shares
+           WHERE list_shares.list_id = lists.id AND list_shares.user_id = ? AND list_shares.status = 'accepted'
+         ))
+       ORDER BY todos.created_at DESC`
+    )
+    .all(req.userId, req.userId, req.userId);
+  res.json(hydrateTodos(todos));
+});
+
 router.post("/", (req, res) => {
   const {
     title,
@@ -166,6 +183,7 @@ router.post("/", (req, res) => {
     notes,
     my_day: myDay,
     remind_at: remindAt,
+    assigned_to: assignedTo,
   } = req.body;
 
   const list = resolveList(req.body.list_id, req.userId);
@@ -184,11 +202,14 @@ router.post("/", (req, res) => {
   if (!RECURRENCES.includes(recurrence)) {
     return res.status(400).json({ error: "Invalid recurrence" });
   }
+  if (assignedTo && !canAccessList(Number(assignedTo), list)) {
+    return res.status(400).json({ error: "Assignee must be a member of the list" });
+  }
 
   const result = db
     .prepare(
-      `INSERT INTO todos (user_id, list_id, title, due_date, priority, recurrence, created_by, important, notes, my_day_date, remind_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO todos (user_id, list_id, title, due_date, priority, recurrence, created_by, important, notes, my_day_date, remind_at, assigned_to)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       list.user_id,
@@ -201,7 +222,8 @@ router.post("/", (req, res) => {
       important ? 1 : 0,
       notes?.trim() || null,
       myDay ? todayStr() : null,
-      remindAt || null
+      remindAt || null,
+      assignedTo ? Number(assignedTo) : null
     );
 
   const todo = getHydratedTodo(result.lastInsertRowid);
@@ -247,6 +269,12 @@ router.patch("/:id", (req, res) => {
     return res.status(400).json({ error: "Invalid recurrence" });
   }
 
+  const assignedTo =
+    req.body.assigned_to !== undefined ? (req.body.assigned_to ? Number(req.body.assigned_to) : null) : todo.assigned_to;
+  if (assignedTo != null && !canAccessList(assignedTo, getListById(listId))) {
+    return res.status(400).json({ error: "Assignee must be a member of the list" });
+  }
+
   const dueDateChanged = dueDate !== todo.due_date;
   const reminderCount = dueDateChanged ? 0 : todo.reminder_count;
   // A new remind-me time should fire again even if the old one already did.
@@ -254,9 +282,9 @@ router.patch("/:id", (req, res) => {
 
   db.prepare(
     `UPDATE todos SET title = ?, done = ?, due_date = ?, priority = ?, recurrence = ?, reminder_count = ?,
-     important = ?, notes = ?, my_day_date = ?, list_id = ?, remind_at = ?, reminded = ?
+     important = ?, notes = ?, my_day_date = ?, list_id = ?, remind_at = ?, reminded = ?, assigned_to = ?
      WHERE id = ?`
-  ).run(title, done, dueDate, priority, recurrence, reminderCount, important, notes, myDayDate, listId, remindAt, reminded, todo.id);
+  ).run(title, done, dueDate, priority, recurrence, reminderCount, important, notes, myDayDate, listId, remindAt, reminded, assignedTo, todo.id);
 
   // Just completed a recurring task with a due date: schedule the next occurrence.
   if (done === 1 && todo.done === 0 && recurrence !== "none" && dueDate) {

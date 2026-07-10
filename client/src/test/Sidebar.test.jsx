@@ -31,6 +31,14 @@ describe("Sidebar", () => {
     expect(screen.getByRole("button", { name: /my day/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^important$/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^planned$/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /assigned to me/i })).toBeInTheDocument();
+  });
+
+  it("selects the Assigned to me view", async () => {
+    const user = userEvent.setup();
+    const props = renderSidebar();
+    await user.click(screen.getByRole("button", { name: /assigned to me/i }));
+    expect(props.onSelect).toHaveBeenCalledWith({ type: "assigned" });
   });
 
   it("selects a smart view", async () => {

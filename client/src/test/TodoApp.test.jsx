@@ -10,6 +10,7 @@ vi.mock("../api", () => ({
     getMyDay: vi.fn(),
     getImportant: vi.fn(),
     getPlanned: vi.fn(),
+    getAssignedToMe: vi.fn(),
     addTodo: vi.fn(),
     updateTodo: vi.fn(),
     deleteTodo: vi.fn(),
@@ -82,6 +83,7 @@ beforeEach(() => {
   api.getMyDay.mockResolvedValue([]);
   api.getImportant.mockResolvedValue([]);
   api.getPlanned.mockResolvedValue([]);
+  api.getAssignedToMe.mockResolvedValue([]);
   api.getListMembers.mockResolvedValue([{ id: 1, username: "alice", nickname: "Alice" }]);
   api.getCollaborators.mockResolvedValue({ myLists: [], myCollaborators: [], invitesReceived: [] });
   api.getLists.mockResolvedValue([DEFAULT_LIST]);

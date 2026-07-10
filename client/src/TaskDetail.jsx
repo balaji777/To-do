@@ -21,10 +21,18 @@ export default function TaskDetail({ todo, token, onClose, onUpdate, onDelete })
   const [uploading, setUploading] = useState(false);
   const [attachmentError, setAttachmentError] = useState("");
   const fileInputRef = useRef(null);
+  const [members, setMembers] = useState([]);
 
   useEffect(() => {
     api.getAttachments(token, todo.id).then(setAttachments).catch(() => setAttachments([]));
   }, [token, todo.id]);
+
+  useEffect(() => {
+    api
+      .getListShares(token, todo.list_id)
+      .then((data) => setMembers([data.owner, ...data.shares.filter((s) => s.status === "accepted").map((s) => ({ id: s.user_id, username: s.username, nickname: s.nickname }))]))
+      .catch(() => setMembers([]));
+  }, [token, todo.list_id]);
 
   async function handleFileChange(e) {
     const file = e.target.files[0];
@@ -184,6 +192,26 @@ export default function TaskDetail({ todo, token, onClose, onUpdate, onDelete })
           <span aria-hidden="true">☀</span>
           {todo.my_day_date ? "Added to My Day" : "Add to My Day"}
         </button>
+
+        {members.length > 1 && (
+          <div className="mb-4">
+            <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-400">
+              Assigned to
+            </label>
+            <select
+              value={todo.assigned_to || ""}
+              onChange={(e) => patch({ assigned_to: e.target.value ? Number(e.target.value) : null })}
+              className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-slate-600 dark:bg-slate-900 dark:text-white"
+            >
+              <option value="">Nobody</option>
+              {members.map((member) => (
+                <option key={member.id} value={member.id}>
+                  {member.nickname || member.username}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         <div className="mb-4">
           <p className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-400">Attachments</p>

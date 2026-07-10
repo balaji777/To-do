@@ -12,6 +12,7 @@ const VIEW_TITLES = {
   "my-day": "My Day",
   important: "Important",
   planned: "Planned",
+  assigned: "Assigned to me",
 };
 
 function isOverdue(todo) {
@@ -92,6 +93,7 @@ export default function TodoApp() {
     if (activeView.type === "my-day") return api.getMyDay(auth.token);
     if (activeView.type === "important") return api.getImportant(auth.token);
     if (activeView.type === "planned") return api.getPlanned(auth.token);
+    if (activeView.type === "assigned") return api.getAssignedToMe(auth.token);
     return api.getTodos(auth.token, activeView.listId);
   }
 
