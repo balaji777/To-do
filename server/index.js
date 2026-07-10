@@ -21,7 +21,7 @@ if (!process.env.GOOGLE_CLIENT_ID) {
 
 const app = express();
 
-app.use(cors());
+app.use(cors(process.env.CLIENT_ORIGIN ? { origin: process.env.CLIENT_ORIGIN } : undefined));
 app.use(express.json());
 
 app.use("/api/auth", authRoutes);

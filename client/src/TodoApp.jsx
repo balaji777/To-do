@@ -24,6 +24,12 @@ function isOverdue(todo) {
   return due < new Date();
 }
 
+function openDatePicker(e) {
+  if (typeof e.target.showPicker === "function") {
+    e.target.showPicker();
+  }
+}
+
 function todayStr() {
   const d = new Date();
   const y = d.getFullYear();
@@ -49,11 +55,15 @@ export default function TodoApp() {
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [priorityFilter, setPriorityFilter] = useState("all");
   const [showCompleted, setShowCompleted] = useState(true);
+  const [sortBy, setSortBy] = useState("due");
 
   const [collab, setCollab] = useState({ myLists: [], myCollaborators: [], invitesReceived: [] });
   const [activeListId, setActiveListId] = useState(null); // null = my own list
   const [members, setMembers] = useState([]);
   const [showShare, setShowShare] = useState(false);
+
+  const [editingId, setEditingId] = useState(null);
+  const [editDraft, setEditDraft] = useState(null);
 
   function refreshCollab() {
     return api.getCollaborators(auth.token).then(setCollab).catch(() => {});
@@ -124,6 +134,22 @@ export default function TodoApp() {
     setTodos((prev) => prev.filter((t) => t.id !== id));
   }
 
+  async function clearCompleted() {
+    const completed = todos.filter((t) => t.done);
+    if (completed.length === 0) return;
+    await Promise.all(completed.map((t) => api.deleteTodo(auth.token, t.id)));
+    setTodos((prev) => prev.filter((t) => !t.done));
+  }
+
+  async function markAllDone() {
+    const pending = todos.filter((t) => !t.done);
+    if (pending.length === 0) return;
+    await Promise.all(pending.map((t) => api.updateTodo(auth.token, t.id, { done: true })));
+    // Recurring todos create their next occurrence server-side; refetch to pick those up.
+    const refreshed = await api.getTodos(auth.token, activeListId);
+    setTodos(refreshed);
+  }
+
   async function handleAcceptInvite(id) {
     await api.acceptInvite(auth.token, id);
     await refreshCollab();
@@ -134,26 +160,85 @@ export default function TodoApp() {
     await refreshCollab();
   }
 
+  function startEdit(todo) {
+    setEditingId(todo.id);
+    setEditDraft({
+      title: todo.title,
+      due_date: todo.due_date || "",
+      priority: todo.priority,
+      category: todo.category || "",
+      dateError: "",
+    });
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setEditDraft(null);
+  }
+
+  function handleEditDateChange(e) {
+    const value = e.target.value;
+    setEditDraft((prev) => ({
+      ...prev,
+      due_date: value,
+      dateError: value && value < today ? "Due date can't be in the past." : "",
+    }));
+  }
+
+  async function saveEdit(todo) {
+    if (!editDraft.title.trim()) return;
+    if (editDraft.due_date && editDraft.due_date < today) {
+      setEditDraft((prev) => ({ ...prev, dateError: "Due date can't be in the past." }));
+      return;
+    }
+    try {
+      const updated = await api.updateTodo(auth.token, todo.id, {
+        title: editDraft.title.trim(),
+        due_date: editDraft.due_date || null,
+        priority: editDraft.priority,
+        category: editDraft.category || null,
+      });
+      setTodos((prev) => prev.map((t) => (t.id === todo.id ? updated : t)));
+      cancelEdit();
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  async function handleLeaveList(membershipId) {
+    await api.removeCollaborator(auth.token, membershipId);
+    setActiveListId(null);
+    await refreshCollab();
+  }
+
   const categories = useMemo(
     () => [...new Set(todos.map((t) => t.category).filter(Boolean))].sort(),
     [todos]
   );
 
   const visibleTodos = useMemo(() => {
+    const PRIORITY_ORDER = { high: 0, medium: 1, low: 2 };
     return todos
       .filter((t) => showCompleted || !t.done)
       .filter((t) => categoryFilter === "all" || t.category === categoryFilter)
       .filter((t) => priorityFilter === "all" || t.priority === priorityFilter)
       .filter((t) => t.title.toLowerCase().includes(search.trim().toLowerCase()))
       .sort((a, b) => {
+        if (sortBy === "priority") {
+          return PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority];
+        }
+        if (sortBy === "created") {
+          return new Date(b.created_at) - new Date(a.created_at);
+        }
         if (!a.due_date && !b.due_date) return 0;
         if (!a.due_date) return 1;
         if (!b.due_date) return -1;
         return new Date(a.due_date) - new Date(b.due_date);
       });
-  }, [todos, showCompleted, categoryFilter, priorityFilter, search]);
+  }, [todos, showCompleted, categoryFilter, priorityFilter, search, sortBy]);
 
   const remaining = todos.filter((t) => !t.done).length;
+  const activeListEntry = collab.myLists.find((l) => l.id === activeListId);
 
   function memberName(userId) {
     const member = members.find((m) => m.id === userId);
@@ -185,12 +270,21 @@ export default function TodoApp() {
             )}
           </div>
           <div className="flex items-center gap-4">
-            <button
-              onClick={() => setShowShare(true)}
-              className="text-sm text-indigo-600 hover:text-indigo-500 dark:text-indigo-400"
-            >
-              Share
-            </button>
+            {activeListId ? (
+              <button
+                onClick={() => handleLeaveList(activeListEntry?.membership_id)}
+                className="text-sm text-rose-600 hover:text-rose-500 dark:text-rose-400"
+              >
+                Leave list
+              </button>
+            ) : (
+              <button
+                onClick={() => setShowShare(true)}
+                className="text-sm text-indigo-600 hover:text-indigo-500 dark:text-indigo-400"
+              >
+                Share
+              </button>
+            )}
             <ThemeToggle />
             <button onClick={logout} className="text-sm text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200">
               Log out
@@ -243,6 +337,7 @@ export default function TodoApp() {
                 value={dueDate}
                 min={today}
                 onChange={handleDueDateChange}
+                onClick={openDatePicker}
                 className={`rounded-md border px-2 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-1 dark:bg-slate-900 dark:text-white ${
                   dateError
                     ? "border-rose-500 focus:border-rose-500 focus:ring-rose-500"
@@ -327,6 +422,15 @@ export default function TodoApp() {
             <option value="medium">Medium</option>
             <option value="high">High</option>
           </select>
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value)}
+            className="rounded-md border border-slate-300 px-2 py-1.5 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-900 dark:text-white"
+          >
+            <option value="due">Sort: Due date</option>
+            <option value="priority">Sort: Priority</option>
+            <option value="created">Sort: Newest</option>
+          </select>
           <label className="flex items-center gap-1.5 text-sm text-slate-600 dark:text-slate-300">
             <input
               type="checkbox"
@@ -336,6 +440,20 @@ export default function TodoApp() {
             />
             Show completed
           </label>
+          <div className="ml-auto flex gap-3 text-sm">
+            <button
+              onClick={markAllDone}
+              className="text-slate-500 hover:text-indigo-600 dark:text-slate-400 dark:hover:text-indigo-400"
+            >
+              Mark all done
+            </button>
+            <button
+              onClick={clearCompleted}
+              className="text-slate-500 hover:text-red-600 dark:text-slate-400 dark:hover:text-red-400"
+            >
+              Clear completed
+            </button>
+          </div>
         </div>
 
         {loading ? (
@@ -344,56 +462,129 @@ export default function TodoApp() {
           <p className="text-center text-slate-500 dark:text-slate-400">No tasks match.</p>
         ) : (
           <ul className="space-y-2">
-            {visibleTodos.map((todo) => (
-              <li
-                key={todo.id}
-                className="flex items-start gap-3 rounded-md bg-white px-4 py-3 shadow-sm ring-1 ring-slate-200 dark:bg-slate-800 dark:ring-slate-700"
-              >
-                <input
-                  type="checkbox"
-                  checked={!!todo.done}
-                  onChange={() => toggleDone(todo)}
-                  className="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                />
-                <div className="flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className={`${todo.done ? "text-slate-400 line-through" : "text-slate-900 dark:text-white"}`}>
-                      {todo.title}
-                    </span>
-                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${PRIORITY_STYLES[todo.priority]}`}>
-                      {todo.priority}
-                    </span>
-                    {todo.category && (
-                      <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600 dark:bg-slate-700 dark:text-slate-300">
-                        {todo.category}
-                      </span>
-                    )}
-                    {members.length > 1 && todo.created_by && (
-                      <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-xs text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-300">
-                        {todo.created_by === auth.id ? "You" : memberName(todo.created_by)}
-                      </span>
-                    )}
-                  </div>
-                  <div className="mt-1 flex flex-wrap gap-2 text-xs">
-                    {todo.due_date && (
-                      <span className={isOverdue(todo) ? "font-medium text-rose-600 dark:text-rose-400" : "text-slate-400"}>
-                        Due {new Date(todo.due_date).toLocaleDateString()}
-                        {isOverdue(todo) ? " (overdue)" : ""}
-                      </span>
-                    )}
-                    {RECURRENCE_LABELS[todo.recurrence] && (
-                      <span className="text-slate-400">{RECURRENCE_LABELS[todo.recurrence]}</span>
-                    )}
-                  </div>
-                </div>
-                <button
-                  onClick={() => removeTodo(todo.id)}
-                  className="text-sm text-slate-400 hover:text-red-600 dark:hover:text-red-400"
+            {visibleTodos.map((todo) =>
+              editingId === todo.id ? (
+                <li
+                  key={todo.id}
+                  className="space-y-2 rounded-md bg-white px-4 py-3 shadow-sm ring-1 ring-indigo-300 dark:bg-slate-800 dark:ring-indigo-700"
                 >
-                  Delete
-                </button>
-              </li>
-            ))}
+                  <input
+                    type="text"
+                    value={editDraft.title}
+                    onChange={(e) => setEditDraft((prev) => ({ ...prev, title: e.target.value }))}
+                    className="w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-slate-600 dark:bg-slate-900 dark:text-white"
+                  />
+                  <div className="flex flex-wrap gap-2">
+                    <div>
+                      <input
+                        type="date"
+                        value={editDraft.due_date}
+                        min={today}
+                        onChange={handleEditDateChange}
+                        onClick={openDatePicker}
+                        className={`rounded-md border px-2 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-1 dark:bg-slate-900 dark:text-white ${
+                          editDraft.dateError
+                            ? "border-rose-500 focus:border-rose-500 focus:ring-rose-500"
+                            : "border-slate-300 focus:border-indigo-500 focus:ring-indigo-500 dark:border-slate-600"
+                        }`}
+                      />
+                      {editDraft.dateError && (
+                        <p className="mt-1 text-xs text-rose-600 dark:text-rose-400">{editDraft.dateError}</p>
+                      )}
+                    </div>
+                    <select
+                      value={editDraft.priority}
+                      onChange={(e) => setEditDraft((prev) => ({ ...prev, priority: e.target.value }))}
+                      className="rounded-md border border-slate-300 px-2 py-1.5 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-slate-600 dark:bg-slate-900 dark:text-white"
+                    >
+                      <option value="low">Low priority</option>
+                      <option value="medium">Medium priority</option>
+                      <option value="high">High priority</option>
+                    </select>
+                    <input
+                      type="text"
+                      list="category-options"
+                      value={editDraft.category}
+                      onChange={(e) => setEditDraft((prev) => ({ ...prev, category: e.target.value }))}
+                      placeholder="Category (optional)"
+                      className="rounded-md border border-slate-300 px-2 py-1.5 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-slate-600 dark:bg-slate-900 dark:text-white"
+                    />
+                    <div className="ml-auto flex gap-2">
+                      <button
+                        onClick={cancelEdit}
+                        className="rounded-md px-3 py-1.5 text-sm font-medium text-slate-600 ring-1 ring-slate-300 hover:bg-slate-50 dark:text-slate-300 dark:ring-slate-600 dark:hover:bg-slate-700"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={() => saveEdit(todo)}
+                        disabled={!!editDraft.dateError}
+                        className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Save
+                      </button>
+                    </div>
+                  </div>
+                </li>
+              ) : (
+                <li
+                  key={todo.id}
+                  className="flex items-start gap-3 rounded-md bg-white px-4 py-3 shadow-sm ring-1 ring-slate-200 dark:bg-slate-800 dark:ring-slate-700"
+                >
+                  <input
+                    type="checkbox"
+                    checked={!!todo.done}
+                    onChange={() => toggleDone(todo)}
+                    className="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                  />
+                  <div className="flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className={`${todo.done ? "text-slate-400 line-through" : "text-slate-900 dark:text-white"}`}>
+                        {todo.title}
+                      </span>
+                      <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${PRIORITY_STYLES[todo.priority]}`}>
+                        {todo.priority}
+                      </span>
+                      {todo.category && (
+                        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600 dark:bg-slate-700 dark:text-slate-300">
+                          {todo.category}
+                        </span>
+                      )}
+                      {members.length > 1 && todo.created_by && (
+                        <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-xs text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-300">
+                          {todo.created_by === auth.id ? "You" : memberName(todo.created_by)}
+                        </span>
+                      )}
+                    </div>
+                    <div className="mt-1 flex flex-wrap gap-2 text-xs">
+                      {todo.due_date && (
+                        <span className={isOverdue(todo) ? "font-medium text-rose-600 dark:text-rose-400" : "text-slate-400"}>
+                          Due {new Date(todo.due_date).toLocaleDateString()}
+                          {isOverdue(todo) ? " (overdue)" : ""}
+                        </span>
+                      )}
+                      {RECURRENCE_LABELS[todo.recurrence] && (
+                        <span className="text-slate-400">{RECURRENCE_LABELS[todo.recurrence]}</span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex flex-col items-end gap-1">
+                    <button
+                      onClick={() => startEdit(todo)}
+                      className="text-sm text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => removeTodo(todo.id)}
+                      className="text-sm text-slate-400 hover:text-red-600 dark:hover:text-red-400"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </li>
+              )
+            )}
           </ul>
         )}
 

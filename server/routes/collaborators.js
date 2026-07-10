@@ -12,7 +12,7 @@ router.use(requireAuth);
 router.get("/", (req, res) => {
   const myLists = db
     .prepare(
-      `SELECT users.id, users.username, users.nickname
+      `SELECT collaborators.id AS membership_id, users.id, users.username, users.nickname
        FROM collaborators
        JOIN users ON users.id = collaborators.list_owner_id
        WHERE collaborators.user_id = ? AND collaborators.status = 'accepted'`
