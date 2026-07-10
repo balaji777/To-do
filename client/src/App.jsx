@@ -1,10 +1,13 @@
 import { AuthProvider, useAuth } from "./AuthContext";
-import LoginForm from "./LoginForm";
+import GoogleSignIn from "./GoogleSignIn";
+import NicknameModal from "./NicknameModal";
 import TodoApp from "./TodoApp";
 
 function AppShell() {
   const { auth } = useAuth();
-  return auth ? <TodoApp /> : <LoginForm />;
+  if (!auth) return <GoogleSignIn />;
+  if (!auth.nickname) return <NicknameModal />;
+  return <TodoApp />;
 }
 
 export default function App() {

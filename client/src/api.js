@@ -22,10 +22,17 @@ async function request(path, { method = "GET", body, token } = {}) {
 }
 
 export const api = {
-  register: (username, password) => request("/auth/register", { method: "POST", body: { username, password } }),
-  login: (username, password) => request("/auth/login", { method: "POST", body: { username, password } }),
-  getTodos: (token) => request("/todos", { token }),
-  addTodo: (token, title) => request("/todos", { method: "POST", body: { title }, token }),
+  googleLogin: (credential) => request("/auth/google", { method: "POST", body: { credential } }),
+  setNickname: (token, nickname) => request("/auth/nickname", { method: "PATCH", body: { nickname }, token }),
+  getTodos: (token, listOwnerId) => request(`/todos${listOwnerId ? `?list=${listOwnerId}` : ""}`, { token }),
+  addTodo: (token, todo) => request("/todos", { method: "POST", body: todo, token }),
   updateTodo: (token, id, changes) => request(`/todos/${id}`, { method: "PATCH", body: changes, token }),
   deleteTodo: (token, id) => request(`/todos/${id}`, { method: "DELETE", token }),
+  getCollaborators: (token) => request("/collaborators", { token }),
+  getListMembers: (token, listOwnerId) =>
+    request(`/collaborators/members${listOwnerId ? `?list=${listOwnerId}` : ""}`, { token }),
+  inviteCollaborator: (token, email) => request("/collaborators/invite", { method: "POST", body: { email }, token }),
+  acceptInvite: (token, id) => request(`/collaborators/${id}/accept`, { method: "POST", token }),
+  declineInvite: (token, id) => request(`/collaborators/${id}/decline`, { method: "POST", token }),
+  removeCollaborator: (token, id) => request(`/collaborators/${id}`, { method: "DELETE", token }),
 };
