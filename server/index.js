@@ -4,6 +4,9 @@ import cors from "cors";
 import authRoutes from "./routes/auth.js";
 import todoRoutes from "./routes/todos.js";
 import collaboratorRoutes from "./routes/collaborators.js";
+import categoryRoutes from "./routes/categories.js";
+import labelRoutes from "./routes/labels.js";
+import subtaskRoutes from "./routes/subtasks.js";
 import { startReminderScheduler } from "./reminders.js";
 
 if (!process.env.JWT_SECRET) {
@@ -27,6 +30,9 @@ app.use(express.json());
 app.use("/api/auth", authRoutes);
 app.use("/api/todos", todoRoutes);
 app.use("/api/collaborators", collaboratorRoutes);
+app.use("/api/categories", categoryRoutes);
+app.use("/api/labels", labelRoutes);
+app.use("/api/subtasks", subtaskRoutes);
 
 app.get("/api/health", (req, res) => res.json({ ok: true }));
 

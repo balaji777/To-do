@@ -54,21 +54,18 @@ export default function GoogleSignIn() {
   }, [login]);
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4 dark:bg-slate-900">
-      <div className="w-full max-w-sm rounded-xl bg-white p-8 text-center shadow-sm ring-1 ring-slate-200 dark:bg-slate-800 dark:ring-slate-700">
-        <h1 className="mb-2 text-2xl font-semibold text-slate-900 dark:text-white">To-Do</h1>
-        <p className="mb-6 text-sm text-slate-500 dark:text-slate-400">Sign in with Google to continue</p>
+    <div className="text-center">
+      <p className="mb-3 text-sm text-slate-500 dark:text-slate-400">Sign in with Google to track your sprint work</p>
 
-        {CLIENT_ID ? (
-          <div ref={buttonRef} className="flex justify-center" />
-        ) : (
-          <p className="text-sm text-rose-600 dark:text-rose-400">
-            Google sign-in isn&apos;t configured yet. Set VITE_GOOGLE_CLIENT_ID in client/.env.
-          </p>
-        )}
+      {CLIENT_ID ? (
+        <div ref={buttonRef} className="flex justify-center" />
+      ) : (
+        <p className="text-sm text-rose-600 dark:text-rose-400">
+          Google sign-in isn&apos;t configured yet. Set VITE_GOOGLE_CLIENT_ID in client/.env.
+        </p>
+      )}
 
-        {error && <p className="mt-4 text-sm text-red-600 dark:text-red-400">{error}</p>}
-      </div>
+      {error && <p className="mt-4 text-sm text-red-600 dark:text-red-400">{error}</p>}
     </div>
   );
 }

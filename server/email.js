@@ -38,6 +38,7 @@ function formatDueDate(dueDate) {
 const PRIORITY_COLORS = { low: "#059669", medium: "#d97706", high: "#e11d48" };
 const PRIORITY_LABELS = { low: "Low", medium: "Medium", high: "High" };
 const RECURRENCE_LABELS = { daily: "Daily", weekly: "Weekly", monthly: "Monthly" };
+const TYPE_LABELS = { bug: "Bug", feature: "Feature", chore: "Chore", task: "Task" };
 
 function taskMetaTable(todo) {
   const rows = [];
@@ -49,14 +50,25 @@ function taskMetaTable(todo) {
   rows.push(
     `<tr><td style="padding:4px 12px 4px 0;color:#64748b;">Priority</td><td style="padding:4px 0;font-weight:600;color:${PRIORITY_COLORS[todo.priority] || "#0f172a"};">${PRIORITY_LABELS[todo.priority] || todo.priority}</td></tr>`
   );
-  if (todo.category) {
+  if (todo.type && TYPE_LABELS[todo.type] && todo.type !== "task") {
     rows.push(
-      `<tr><td style="padding:4px 12px 4px 0;color:#64748b;">Category</td><td style="padding:4px 0;color:#0f172a;">${escapeHtml(todo.category)}</td></tr>`
+      `<tr><td style="padding:4px 12px 4px 0;color:#64748b;">Type</td><td style="padding:4px 0;color:#0f172a;">${TYPE_LABELS[todo.type]}</td></tr>`
+    );
+  }
+  const categoryLabel = todo.category_name || todo.category;
+  if (categoryLabel) {
+    rows.push(
+      `<tr><td style="padding:4px 12px 4px 0;color:#64748b;">Category</td><td style="padding:4px 0;color:#0f172a;">${escapeHtml(categoryLabel)}</td></tr>`
     );
   }
   if (todo.recurrence && todo.recurrence !== "none") {
     rows.push(
       `<tr><td style="padding:4px 12px 4px 0;color:#64748b;">Repeats</td><td style="padding:4px 0;color:#0f172a;">${RECURRENCE_LABELS[todo.recurrence]}</td></tr>`
+    );
+  }
+  if (todo.link) {
+    rows.push(
+      `<tr><td style="padding:4px 12px 4px 0;color:#64748b;">Link</td><td style="padding:4px 0;"><a href="${escapeHtml(todo.link)}" style="color:#4f46e5;">${escapeHtml(todo.link)}</a></td></tr>`
     );
   }
   return `<table cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:16px 0;font-size:14px;">${rows.join("")}</table>`;
@@ -66,11 +78,11 @@ function layout({ heading, bodyHtml }) {
   return `
     <div style="font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;max-width:480px;margin:0 auto;padding:32px 24px;background:#f8fafc;">
       <div style="background:#ffffff;border-radius:12px;padding:28px;border:1px solid #e2e8f0;">
-        <p style="margin:0 0 4px;font-size:12px;font-weight:600;letter-spacing:0.05em;color:#6366f1;text-transform:uppercase;">To-Do</p>
+        <p style="margin:0 0 4px;font-size:12px;font-weight:600;letter-spacing:0.05em;color:#6366f1;text-transform:uppercase;">Planora</p>
         <h1 style="margin:0 0 16px;font-size:20px;color:#0f172a;">${heading}</h1>
         ${bodyHtml}
       </div>
-      <p style="margin:16px 4px;font-size:12px;color:#94a3b8;">You're receiving this because you have an account on To-Do.</p>
+      <p style="margin:16px 4px;font-size:12px;color:#94a3b8;">You're receiving this because you have an account on Planora.</p>
     </div>
   `;
 }
@@ -126,7 +138,7 @@ export function sendCollaboratorInviteEmail(owner, invitee) {
       bodyHtml: `
         <p style="margin:0 0 8px;color:#334155;">Hi ${greetingName(invitee)},</p>
         <p style="margin:0 0 8px;color:#334155;"><strong>${escapeHtml(owner.nickname || owner.username)}</strong> invited you to view and edit their to-do list together.</p>
-        <p style="margin:16px 0 0;color:#334155;">Log in to To-Do and check your pending invites to accept or decline.</p>
+        <p style="margin:16px 0 0;color:#334155;">Log in to Planora and check your pending invites to accept or decline.</p>
       `,
     }),
   });
@@ -141,6 +153,25 @@ export function sendCollaboratorAcceptedEmail(owner, collaborator) {
       bodyHtml: `
         <p style="margin:0 0 8px;color:#334155;">Hi ${greetingName(owner)},</p>
         <p style="margin:0;color:#334155;"><strong>${escapeHtml(collaborator.nickname || collaborator.username)}</strong> accepted your invite and can now see and edit your to-do list.</p>
+      `,
+    }),
+  });
+}
+
+export function sendVerificationEmail(user, token) {
+  const verifyUrl = `${process.env.CLIENT_ORIGIN || "http://localhost:5173"}/verify-email?token=${token}`;
+  return send({
+    to: user.email,
+    subject: "Verify your email",
+    html: layout({
+      heading: "Verify your email",
+      bodyHtml: `
+        <p style="margin:0 0 8px;color:#334155;">Hi ${greetingName(user)},</p>
+        <p style="margin:0 0 16px;color:#334155;">Confirm your email address to finish setting up your account.</p>
+        <p style="margin:0;">
+          <a href="${verifyUrl}" style="display:inline-block;background:#4f46e5;color:#ffffff;padding:10px 20px;border-radius:8px;font-weight:600;text-decoration:none;">Verify email</a>
+        </p>
+        <p style="margin:16px 0 0;font-size:12px;color:#94a3b8;">This link expires in 24 hours.</p>
       `,
     }),
   });

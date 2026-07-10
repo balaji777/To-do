@@ -32,6 +32,11 @@ export function AuthProvider({ children }) {
     localStorage.removeItem("nickname");
     localStorage.removeItem("id");
     setAuth(null);
+    // Clear the offline todos cache so a network blip after logout can't serve
+    // this user's cached data to whoever logs in next on the same device.
+    if (typeof caches !== "undefined") {
+      caches.delete("todos-cache").catch(() => {});
+    }
   }, []);
 
   return (

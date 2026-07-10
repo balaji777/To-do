@@ -3,12 +3,23 @@ import { api } from "./api";
 import { useAuth } from "./AuthContext";
 import ThemeToggle from "./ThemeToggle";
 import ShareModal from "./ShareModal";
+import SubtaskList from "./SubtaskList";
+import LabelPicker from "./LabelPicker";
 
 const PRIORITY_STYLES = {
   low: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
   medium: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
   high: "bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300",
 };
+
+const TYPE_STYLES = {
+  bug: "bg-rose-50 text-rose-600 ring-1 ring-inset ring-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:ring-rose-800",
+  feature: "bg-indigo-50 text-indigo-600 ring-1 ring-inset ring-indigo-200 dark:bg-indigo-950/40 dark:text-indigo-300 dark:ring-indigo-800",
+  chore: "bg-slate-100 text-slate-600 ring-1 ring-inset ring-slate-200 dark:bg-slate-700 dark:text-slate-300 dark:ring-slate-600",
+  task: "bg-sky-50 text-sky-600 ring-1 ring-inset ring-sky-200 dark:bg-sky-950/40 dark:text-sky-300 dark:ring-sky-800",
+};
+
+const TYPE_LABELS = { bug: "Bug", feature: "Feature", chore: "Chore", task: "Task" };
 
 const RECURRENCE_LABELS = {
   none: null,
@@ -44,8 +55,14 @@ export default function TodoApp() {
   const [title, setTitle] = useState("");
   const [dueDate, setDueDate] = useState("");
   const [priority, setPriority] = useState("medium");
-  const [category, setCategory] = useState("");
+  const [categoryId, setCategoryId] = useState("");
   const [recurrence, setRecurrence] = useState("none");
+  const [type, setType] = useState("task");
+  const [link, setLink] = useState("");
+  const [categories, setCategories] = useState([]);
+  const [labels, setLabels] = useState([]);
+  const [newCategoryName, setNewCategoryName] = useState("");
+  const [addingCategory, setAddingCategory] = useState(false);
   const [error, setError] = useState("");
   const [dateError, setDateError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -75,10 +92,17 @@ export default function TodoApp() {
 
   useEffect(() => {
     setLoading(true);
-    Promise.all([api.getTodos(auth.token, activeListId), api.getListMembers(auth.token, activeListId)])
-      .then(([todosData, membersData]) => {
+    Promise.all([
+      api.getTodos(auth.token, activeListId),
+      api.getListMembers(auth.token, activeListId),
+      api.getCategories(auth.token, activeListId),
+      api.getLabels(auth.token, activeListId),
+    ])
+      .then(([todosData, membersData, categoriesData, labelsData]) => {
         setTodos(todosData);
         setMembers(membersData);
+        setCategories(categoriesData);
+        setLabels(labelsData);
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
@@ -102,8 +126,10 @@ export default function TodoApp() {
         title,
         due_date: dueDate || null,
         priority,
-        category: category || null,
+        category_id: categoryId || null,
         recurrence,
+        type,
+        link: link || null,
         list: activeListId || undefined,
       });
       setTodos((prev) => [todo, ...prev]);
@@ -111,8 +137,24 @@ export default function TodoApp() {
       setDueDate("");
       setDateError("");
       setPriority("medium");
-      setCategory("");
+      setCategoryId("");
       setRecurrence("none");
+      setType("task");
+      setLink("");
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  async function handleAddCategory(e) {
+    e.preventDefault();
+    if (!newCategoryName.trim()) return;
+    try {
+      const category = await api.addCategory(auth.token, newCategoryName.trim(), activeListId);
+      setCategories((prev) => [...prev, category].sort((a, b) => a.name.localeCompare(b.name)));
+      setCategoryId(category.id);
+      setNewCategoryName("");
+      setAddingCategory(false);
     } catch (err) {
       setError(err.message);
     }
@@ -166,7 +208,9 @@ export default function TodoApp() {
       title: todo.title,
       due_date: todo.due_date || "",
       priority: todo.priority,
-      category: todo.category || "",
+      category_id: todo.category_id || "",
+      type: todo.type || "task",
+      link: todo.link || "",
       dateError: "",
     });
   }
@@ -196,7 +240,9 @@ export default function TodoApp() {
         title: editDraft.title.trim(),
         due_date: editDraft.due_date || null,
         priority: editDraft.priority,
-        category: editDraft.category || null,
+        category_id: editDraft.category_id || null,
+        type: editDraft.type,
+        link: editDraft.link || null,
       });
       setTodos((prev) => prev.map((t) => (t.id === todo.id ? updated : t)));
       cancelEdit();
@@ -211,16 +257,11 @@ export default function TodoApp() {
     await refreshCollab();
   }
 
-  const categories = useMemo(
-    () => [...new Set(todos.map((t) => t.category).filter(Boolean))].sort(),
-    [todos]
-  );
-
   const visibleTodos = useMemo(() => {
     const PRIORITY_ORDER = { high: 0, medium: 1, low: 2 };
     return todos
       .filter((t) => showCompleted || !t.done)
-      .filter((t) => categoryFilter === "all" || t.category === categoryFilter)
+      .filter((t) => categoryFilter === "all" || String(t.category_id) === categoryFilter)
       .filter((t) => priorityFilter === "all" || t.priority === priorityFilter)
       .filter((t) => t.title.toLowerCase().includes(search.trim().toLowerCase()))
       .sort((a, b) => {
@@ -326,7 +367,7 @@ export default function TodoApp() {
             type="text"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            placeholder="What needs to be done?"
+            placeholder="What needs to ship?"
             className="w-full rounded-md border border-slate-300 px-3 py-2 text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-slate-600 dark:bg-slate-900 dark:text-white"
           />
 
@@ -347,6 +388,16 @@ export default function TodoApp() {
               {dateError && <p className="mt-1 text-xs text-rose-600 dark:text-rose-400">{dateError}</p>}
             </div>
             <select
+              value={type}
+              onChange={(e) => setType(e.target.value)}
+              className="rounded-md border border-slate-300 px-2 py-1.5 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-slate-600 dark:bg-slate-900 dark:text-white"
+            >
+              <option value="task">Task</option>
+              <option value="bug">Bug</option>
+              <option value="feature">Feature</option>
+              <option value="chore">Chore</option>
+            </select>
+            <select
               value={priority}
               onChange={(e) => setPriority(e.target.value)}
               className="rounded-md border border-slate-300 px-2 py-1.5 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-slate-600 dark:bg-slate-900 dark:text-white"
@@ -355,19 +406,51 @@ export default function TodoApp() {
               <option value="medium">Medium priority</option>
               <option value="high">High priority</option>
             </select>
-            <input
-              type="text"
-              list="category-options"
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
-              placeholder="Category (optional)"
-              className="rounded-md border border-slate-300 px-2 py-1.5 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-slate-600 dark:bg-slate-900 dark:text-white"
-            />
-            <datalist id="category-options">
-              {categories.map((c) => (
-                <option key={c} value={c} />
-              ))}
-            </datalist>
+            {addingCategory ? (
+              <form onSubmit={handleAddCategory} className="flex items-center gap-1">
+                <input
+                  type="text"
+                  autoFocus
+                  value={newCategoryName}
+                  onChange={(e) => setNewCategoryName(e.target.value)}
+                  placeholder="New category name"
+                  className="rounded-md border border-slate-300 px-2 py-1.5 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-slate-600 dark:bg-slate-900 dark:text-white"
+                />
+                <button type="submit" className="text-sm font-medium text-indigo-600 hover:text-indigo-500 dark:text-indigo-400">
+                  Save
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAddingCategory(false);
+                    setNewCategoryName("");
+                  }}
+                  className="text-sm text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                >
+                  Cancel
+                </button>
+              </form>
+            ) : (
+              <select
+                value={categoryId}
+                onChange={(e) => {
+                  if (e.target.value === "__new") {
+                    setAddingCategory(true);
+                  } else {
+                    setCategoryId(e.target.value);
+                  }
+                }}
+                className="rounded-md border border-slate-300 px-2 py-1.5 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-slate-600 dark:bg-slate-900 dark:text-white"
+              >
+                <option value="">No category</option>
+                {categories.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+                <option value="__new">+ New category...</option>
+              </select>
+            )}
             <select
               value={recurrence}
               onChange={(e) => setRecurrence(e.target.value)}
@@ -380,6 +463,13 @@ export default function TodoApp() {
               <option value="weekly">Repeats weekly</option>
               <option value="monthly">Repeats monthly</option>
             </select>
+            <input
+              type="url"
+              value={link}
+              onChange={(e) => setLink(e.target.value)}
+              placeholder="Issue / PR link (optional)"
+              className="rounded-md border border-slate-300 px-2 py-1.5 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-slate-600 dark:bg-slate-900 dark:text-white"
+            />
             <button
               type="submit"
               disabled={!!dateError}
@@ -407,8 +497,8 @@ export default function TodoApp() {
           >
             <option value="all">All categories</option>
             {categories.map((c) => (
-              <option key={c} value={c}>
-                {c}
+              <option key={c.id} value={c.id}>
+                {c.name}
               </option>
             ))}
           </select>
@@ -493,6 +583,16 @@ export default function TodoApp() {
                       )}
                     </div>
                     <select
+                      value={editDraft.type}
+                      onChange={(e) => setEditDraft((prev) => ({ ...prev, type: e.target.value }))}
+                      className="rounded-md border border-slate-300 px-2 py-1.5 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-slate-600 dark:bg-slate-900 dark:text-white"
+                    >
+                      <option value="task">Task</option>
+                      <option value="bug">Bug</option>
+                      <option value="feature">Feature</option>
+                      <option value="chore">Chore</option>
+                    </select>
+                    <select
                       value={editDraft.priority}
                       onChange={(e) => setEditDraft((prev) => ({ ...prev, priority: e.target.value }))}
                       className="rounded-md border border-slate-300 px-2 py-1.5 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-slate-600 dark:bg-slate-900 dark:text-white"
@@ -501,12 +601,23 @@ export default function TodoApp() {
                       <option value="medium">Medium priority</option>
                       <option value="high">High priority</option>
                     </select>
+                    <select
+                      value={editDraft.category_id}
+                      onChange={(e) => setEditDraft((prev) => ({ ...prev, category_id: e.target.value }))}
+                      className="rounded-md border border-slate-300 px-2 py-1.5 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-slate-600 dark:bg-slate-900 dark:text-white"
+                    >
+                      <option value="">No category</option>
+                      {categories.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
                     <input
-                      type="text"
-                      list="category-options"
-                      value={editDraft.category}
-                      onChange={(e) => setEditDraft((prev) => ({ ...prev, category: e.target.value }))}
-                      placeholder="Category (optional)"
+                      type="url"
+                      value={editDraft.link}
+                      onChange={(e) => setEditDraft((prev) => ({ ...prev, link: e.target.value }))}
+                      placeholder="Issue / PR link (optional)"
                       className="rounded-md border border-slate-300 px-2 py-1.5 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-slate-600 dark:bg-slate-900 dark:text-white"
                     />
                     <div className="ml-auto flex gap-2">
@@ -545,9 +656,24 @@ export default function TodoApp() {
                       <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${PRIORITY_STYLES[todo.priority]}`}>
                         {todo.priority}
                       </span>
-                      {todo.category && (
+                      {todo.type && todo.type !== "task" && (
+                        <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${TYPE_STYLES[todo.type]}`}>
+                          {TYPE_LABELS[todo.type]}
+                        </span>
+                      )}
+                      {todo.link && (
+                        <a
+                          href={todo.link}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400"
+                        >
+                          Link
+                        </a>
+                      )}
+                      {(todo.category_name || todo.category) && (
                         <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600 dark:bg-slate-700 dark:text-slate-300">
-                          {todo.category}
+                          {todo.category_name || todo.category}
                         </span>
                       )}
                       {members.length > 1 && todo.created_by && (
@@ -567,6 +693,8 @@ export default function TodoApp() {
                         <span className="text-slate-400">{RECURRENCE_LABELS[todo.recurrence]}</span>
                       )}
                     </div>
+                    <LabelPicker todo={todo} allLabels={labels} token={auth.token} />
+                    <SubtaskList todo={todo} token={auth.token} />
                   </div>
                   <div className="flex flex-col items-end gap-1">
                     <button
