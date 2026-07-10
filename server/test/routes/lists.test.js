@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import request from "supertest";
-import { buildApp, seedUser, seedList, getDefaultList, signTestToken } from "../helpers.js";
+import { buildApp, seedUser, seedList, getDefaultList, seedListShare, signTestToken } from "../helpers.js";
 import db from "../../db.js";
 
 describe("lists routes", () => {
@@ -29,21 +29,15 @@ describe("lists routes", () => {
       expect(res.body[0].is_default).toBe(1);
     });
 
-    it("denies access to another account's lists without collaboration", async () => {
-      const other = seedUser();
-      const res = await authed(request(app).get(`/api/lists?owner=${other.id}`));
-      expect(res.status).toBe(403);
-    });
-
-    it("allows access via an accepted collaboration", async () => {
+    it("does not include lists shared with the caller (those live under /api/list-shares)", async () => {
       const owner = seedUser();
-      db.prepare("INSERT INTO collaborators (list_owner_id, user_id, status) VALUES (?, ?, 'accepted')").run(
-        owner.id,
-        user.id
-      );
-      const res = await authed(request(app).get(`/api/lists?owner=${owner.id}`));
+      const ownerList = getDefaultList(owner.id);
+      seedListShare(ownerList.id, user.id, "accepted");
+
+      const res = await authed(request(app).get("/api/lists"));
       expect(res.status).toBe(200);
       expect(res.body).toHaveLength(1);
+      expect(res.body[0].id).toBe(defaultList.id);
     });
   });
 
@@ -88,6 +82,35 @@ describe("lists routes", () => {
       const other = seedUser();
       const otherList = seedList(other.id);
       const res = await authed(request(app).patch(`/api/lists/${otherList.id}`)).send({ name: "Hijack" });
+      expect(res.status).toBe(404);
+    });
+
+    it("allows a user with an accepted share on that specific list", async () => {
+      const owner = seedUser();
+      const sharedList = seedList(owner.id, { name: "Shared" });
+      seedListShare(sharedList.id, user.id, "accepted");
+
+      const res = await authed(request(app).patch(`/api/lists/${sharedList.id}`)).send({ name: "Renamed" });
+      expect(res.status).toBe(200);
+      expect(res.body.name).toBe("Renamed");
+    });
+
+    it("denies a user whose share is only shared on a different list from the same owner", async () => {
+      const owner = seedUser();
+      const sharedList = seedList(owner.id, { name: "Shared" });
+      const otherList = seedList(owner.id, { name: "Not shared" });
+      seedListShare(sharedList.id, user.id, "accepted");
+
+      const res = await authed(request(app).patch(`/api/lists/${otherList.id}`)).send({ name: "Hijack" });
+      expect(res.status).toBe(404);
+    });
+
+    it("denies a user with only a pending (not yet accepted) share", async () => {
+      const owner = seedUser();
+      const sharedList = seedList(owner.id, { name: "Shared" });
+      seedListShare(sharedList.id, user.id, "pending");
+
+      const res = await authed(request(app).patch(`/api/lists/${sharedList.id}`)).send({ name: "Hijack" });
       expect(res.status).toBe(404);
     });
   });

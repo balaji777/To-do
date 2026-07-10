@@ -1,7 +1,6 @@
 import { Router } from "express";
 import db from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
-import { hasListAccess } from "./todos.js";
 
 const router = Router();
 
@@ -13,23 +12,13 @@ function nextOrdering(ownerId) {
 }
 
 router.get("/", (req, res) => {
-  const ownerId = req.query.owner ? Number(req.query.owner) : req.userId;
-  if (!hasListAccess(req.userId, ownerId)) {
-    return res.status(403).json({ error: "You don't have access to that account" });
-  }
-
   const groups = db
     .prepare("SELECT * FROM list_groups WHERE user_id = ? ORDER BY ordering ASC, id ASC")
-    .all(ownerId);
+    .all(req.userId);
   res.json(groups);
 });
 
 router.post("/", (req, res) => {
-  const ownerId = req.body.owner ? Number(req.body.owner) : req.userId;
-  if (!hasListAccess(req.userId, ownerId)) {
-    return res.status(403).json({ error: "You don't have access to that account" });
-  }
-
   const name = (req.body.name || "").trim();
   if (!name) {
     return res.status(400).json({ error: "Name is required" });
@@ -37,14 +26,14 @@ router.post("/", (req, res) => {
 
   const result = db
     .prepare("INSERT INTO list_groups (user_id, name, ordering) VALUES (?, ?, ?)")
-    .run(ownerId, name, nextOrdering(ownerId));
+    .run(req.userId, name, nextOrdering(req.userId));
   const group = db.prepare("SELECT * FROM list_groups WHERE id = ?").get(result.lastInsertRowid);
   res.status(201).json(group);
 });
 
 router.patch("/:id", (req, res) => {
   const group = db.prepare("SELECT * FROM list_groups WHERE id = ?").get(req.params.id);
-  if (!group || !hasListAccess(req.userId, group.user_id)) {
+  if (!group || group.user_id !== req.userId) {
     return res.status(404).json({ error: "Group not found" });
   }
 
@@ -60,7 +49,7 @@ router.patch("/:id", (req, res) => {
 
 router.delete("/:id", (req, res) => {
   const group = db.prepare("SELECT * FROM list_groups WHERE id = ?").get(req.params.id);
-  if (!group || !hasListAccess(req.userId, group.user_id)) {
+  if (!group || group.user_id !== req.userId) {
     return res.status(404).json({ error: "Group not found" });
   }
 

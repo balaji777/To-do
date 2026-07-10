@@ -27,6 +27,12 @@ vi.mock("../api", () => ({
     addListGroup: vi.fn(),
     updateListGroup: vi.fn(),
     deleteListGroup: vi.fn(),
+    getMyListShares: vi.fn(),
+    getListShares: vi.fn(),
+    inviteToList: vi.fn(),
+    acceptListShare: vi.fn(),
+    declineListShare: vi.fn(),
+    removeListShare: vi.fn(),
     getSubtasks: vi.fn(),
     addSubtask: vi.fn(),
     updateSubtask: vi.fn(),
@@ -76,6 +82,8 @@ beforeEach(() => {
   api.getCollaborators.mockResolvedValue({ myLists: [], myCollaborators: [], invitesReceived: [] });
   api.getLists.mockResolvedValue([DEFAULT_LIST]);
   api.getListGroups.mockResolvedValue([]);
+  api.getMyListShares.mockResolvedValue({ sharedWithMe: [], invitesReceived: [] });
+  api.getListShares.mockResolvedValue({ owner: { id: 1, username: "alice", nickname: "Alice" }, shares: [] });
 });
 
 describe("TodoApp", () => {
@@ -249,7 +257,7 @@ describe("TodoApp", () => {
     await user.type(screen.getByPlaceholderText(/list name/i), "Groceries");
     await user.click(screen.getByRole("button", { name: /^add$/i }));
 
-    expect(api.addList).toHaveBeenCalledWith("tok", "Groceries", null, null);
+    expect(api.addList).toHaveBeenCalledWith("tok", "Groceries", null);
     expect(await screen.findByRole("button", { name: /groceries/i })).toBeInTheDocument();
     expect(api.getTodos).toHaveBeenCalledWith("tok", 5);
   });
@@ -264,9 +272,40 @@ describe("TodoApp", () => {
     api.acceptInvite.mockResolvedValue({ id: 5, status: "accepted" });
     renderApp();
 
-    expect(await screen.findByText(/invited you to collaborate/i)).toBeInTheDocument();
+    expect(await screen.findByText(/invited you to their household/i)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /accept/i }));
 
     expect(api.acceptInvite).toHaveBeenCalledWith("tok", 5);
+  });
+
+  it("renders a pending list-share invite and accepts it", async () => {
+    const user = userEvent.setup();
+    api.getMyListShares.mockResolvedValue({
+      sharedWithMe: [],
+      invitesReceived: [
+        { share_id: 9, list_id: 7, list_name: "Groceries", owner_id: 2, owner_username: "bob", owner_nickname: "Bob" },
+      ],
+    });
+    api.acceptListShare.mockResolvedValue({ id: 9, status: "accepted" });
+    renderApp();
+
+    expect(await screen.findByText(/shared the list "Groceries" with you/i)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /accept/i }));
+
+    expect(api.acceptListShare).toHaveBeenCalledWith("tok", 9);
+  });
+
+  it("shows a shared list in the sidebar and fetches its todos when selected", async () => {
+    const user = userEvent.setup();
+    api.getMyListShares.mockResolvedValue({
+      sharedWithMe: [{ id: 7, name: "Groceries", owner_id: 2, owner_username: "bob", owner_nickname: "Bob" }],
+      invitesReceived: [],
+    });
+    renderApp();
+
+    const sharedListButton = await screen.findByRole("button", { name: /groceries/i });
+    await user.click(sharedListButton);
+
+    expect(api.getTodos).toHaveBeenCalledWith("tok", 7);
   });
 });

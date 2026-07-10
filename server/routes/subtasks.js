@@ -1,7 +1,7 @@
 import { Router } from "express";
 import db from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
-import { hasListAccess } from "./todos.js";
+import { canAccessList } from "./todos.js";
 
 const router = Router();
 
@@ -9,7 +9,9 @@ router.use(requireAuth);
 
 function getAccessibleTodo(req, todoId) {
   const todo = db.prepare("SELECT * FROM todos WHERE id = ?").get(todoId);
-  if (!todo || !hasListAccess(req.userId, todo.user_id)) return null;
+  if (!todo) return null;
+  const list = db.prepare("SELECT * FROM lists WHERE id = ?").get(todo.list_id);
+  if (!canAccessList(req.userId, list)) return null;
   return todo;
 }
 

@@ -146,6 +146,35 @@ export function sendCollaboratorAcceptedEmail(owner, collaborator) {
   });
 }
 
+export function sendListShareInviteEmail(owner, invitee, list) {
+  return send({
+    to: invitee.email,
+    subject: `${owner.nickname || owner.username} shared a list with you`,
+    html: layout({
+      heading: "You've been invited to a shared list",
+      bodyHtml: `
+        <p style="margin:0 0 8px;color:#334155;">Hi ${greetingName(invitee)},</p>
+        <p style="margin:0 0 8px;color:#334155;"><strong>${escapeHtml(owner.nickname || owner.username)}</strong> invited you to view and edit their list "${escapeHtml(list.name)}".</p>
+        <p style="margin:16px 0 0;color:#334155;">Log in to Planora and check your pending invites to accept or decline.</p>
+      `,
+    }),
+  });
+}
+
+export function sendListShareAcceptedEmail(owner, collaborator, list) {
+  return send({
+    to: owner.email,
+    subject: `${collaborator.nickname || collaborator.username} accepted your invite`,
+    html: layout({
+      heading: "Invite accepted",
+      bodyHtml: `
+        <p style="margin:0 0 8px;color:#334155;">Hi ${greetingName(owner)},</p>
+        <p style="margin:0;color:#334155;"><strong>${escapeHtml(collaborator.nickname || collaborator.username)}</strong> accepted your invite and can now see and edit "${escapeHtml(list.name)}".</p>
+      `,
+    }),
+  });
+}
+
 export function sendVerificationEmail(user, token) {
   const verifyUrl = `${process.env.CLIENT_ORIGIN || "http://localhost:5173"}/verify-email?token=${token}`;
   return send({

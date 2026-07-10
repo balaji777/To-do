@@ -13,7 +13,7 @@ export default function AuthScreen() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4 dark:bg-slate-900">
+    <div className="flex min-h-screen items-center justify-center px-4">
       <div className="w-full max-w-sm rounded-xl bg-white p-8 shadow-sm ring-1 ring-slate-200 dark:bg-slate-800 dark:ring-slate-700">
         <h1 className="text-center text-2xl font-semibold text-slate-900 dark:text-white">Planora</h1>
         <p className="mb-4 text-center text-xs font-medium uppercase tracking-wide text-indigo-500 dark:text-indigo-400">

@@ -1,4 +1,5 @@
 import { AuthProvider, useAuth } from "./AuthContext";
+import AnimatedBackground from "./AnimatedBackground";
 import AuthScreen from "./AuthScreen";
 import NicknameModal from "./NicknameModal";
 import TodoApp from "./TodoApp";
@@ -13,11 +14,17 @@ function AppShell() {
 
 export default function App() {
   if (window.location.pathname === "/verify-email") {
-    return <VerifyEmailConfirm />;
+    return (
+      <>
+        <AnimatedBackground />
+        <VerifyEmailConfirm />
+      </>
+    );
   }
 
   return (
     <AuthProvider>
+      <AnimatedBackground />
       <AppShell />
     </AuthProvider>
   );

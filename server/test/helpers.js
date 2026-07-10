@@ -8,6 +8,7 @@ import listRoutes from "../routes/lists.js";
 import listGroupRoutes from "../routes/list-groups.js";
 import subtaskRoutes from "../routes/subtasks.js";
 import expenseRoutes from "../routes/expenses.js";
+import listShareRoutes from "../routes/list-shares.js";
 
 export function buildApp() {
   const app = express();
@@ -19,6 +20,7 @@ export function buildApp() {
   app.use("/api/list-groups", listGroupRoutes);
   app.use("/api/subtasks", subtaskRoutes);
   app.use("/api/expenses", expenseRoutes);
+  app.use("/api/list-shares", listShareRoutes);
   return app;
 }
 
@@ -52,4 +54,11 @@ export function seedList(userId, overrides = {}) {
 
 export function getDefaultList(userId) {
   return db.prepare("SELECT * FROM lists WHERE user_id = ? AND is_default = 1").get(userId);
+}
+
+export function seedListShare(listId, userId, status = "accepted") {
+  const result = db
+    .prepare("INSERT INTO list_shares (list_id, user_id, status) VALUES (?, ?, ?)")
+    .run(listId, userId, status);
+  return db.prepare("SELECT * FROM list_shares WHERE id = ?").get(result.lastInsertRowid);
 }

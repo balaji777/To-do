@@ -65,4 +65,20 @@ describe("Sidebar", () => {
     await user.click(screen.getByRole("button", { name: /^add$/i }));
     expect(props.onCreateGroup).toHaveBeenCalledWith("Home");
   });
+
+  it("renders a Shared with Me section and selects a shared list", async () => {
+    const user = userEvent.setup();
+    const props = renderSidebar({
+      sharedLists: [{ id: 9, name: "Camping trip", owner_username: "bob", owner_nickname: "Bob" }],
+    });
+    expect(screen.getByText("Shared with Me")).toBeInTheDocument();
+    const button = screen.getByRole("button", { name: /camping trip/i });
+    await user.click(button);
+    expect(props.onSelect).toHaveBeenCalledWith({ type: "list", listId: 9 });
+  });
+
+  it("omits the Shared with Me section when there are no shared lists", () => {
+    renderSidebar();
+    expect(screen.queryByText("Shared with Me")).not.toBeInTheDocument();
+  });
 });

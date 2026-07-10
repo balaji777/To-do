@@ -22,8 +22,22 @@ function computeNextDueDate(dueDate, recurrence) {
   return next.toISOString().slice(0, 10);
 }
 
+// True if userId may view/edit a specific list: either they own it, or they're an
+// accepted share on that list.
+export function canAccessList(userId, list) {
+  if (!list) return false;
+  if (list.user_id === userId) return true;
+  const row = db
+    .prepare("SELECT 1 FROM list_shares WHERE list_id = ? AND user_id = ? AND status = 'accepted'")
+    .get(list.id, userId);
+  return !!row;
+}
+
 // True if userId may view/edit anything owned by ownerId's account: either it's their
-// own account, or they're an accepted collaborator on it.
+// own account, or they're an accepted collaborator on it. This is the older,
+// account-wide check - only the Expenses/household-splitting feature still uses it
+// (expenses.js), which deliberately stayed account-wide when lists/tasks moved to
+// per-list sharing (see list_shares / canAccessList above).
 export function hasListAccess(userId, ownerId) {
   if (userId === ownerId) return true;
   const row = db
@@ -32,18 +46,24 @@ export function hasListAccess(userId, ownerId) {
   return !!row;
 }
 
-// The owner plus every accepted collaborator on their account.
-function listMembers(ownerId) {
-  const owner = db.prepare("SELECT id, email, username, nickname FROM users WHERE id = ?").get(ownerId);
-  const collaborators = db
+function getListById(listId) {
+  return listId ? db.prepare("SELECT * FROM lists WHERE id = ?").get(listId) : null;
+}
+
+// The list's owner plus every accepted share on that specific list.
+function listMembers(listId) {
+  const list = getListById(listId);
+  if (!list) return [];
+  const owner = db.prepare("SELECT id, email, username, nickname FROM users WHERE id = ?").get(list.user_id);
+  const shares = db
     .prepare(
       `SELECT users.id, users.email, users.username, users.nickname
-       FROM collaborators
-       JOIN users ON users.id = collaborators.user_id
-       WHERE collaborators.list_owner_id = ? AND collaborators.status = 'accepted'`
+       FROM list_shares
+       JOIN users ON users.id = list_shares.user_id
+       WHERE list_shares.list_id = ? AND list_shares.status = 'accepted'`
     )
-    .all(ownerId);
-  return [owner, ...collaborators];
+    .all(listId);
+  return [owner, ...shares];
 }
 
 function getDefaultListId(ownerId) {
@@ -90,10 +110,13 @@ function getHydratedTodo(id) {
   return todo ? hydrateTodos([todo])[0] : null;
 }
 
-function getSmartView(ownerId, whereClause, extraParams = []) {
+// Smart views (My Day/Important/Planned) only aggregate the requesting user's own
+// lists, not lists shared with them - a shared list's tasks are visible in that list
+// directly, not folded into the viewer's personal smart views.
+function getSmartView(userId, whereClause, extraParams = []) {
   const todos = db
     .prepare(`${TODO_SELECT_WITH_LIST} WHERE lists.user_id = ? AND ${whereClause} ORDER BY todos.created_at DESC`)
-    .all(ownerId, ...extraParams);
+    .all(userId, ...extraParams);
   return hydrateTodos(todos);
 }
 
@@ -113,7 +136,7 @@ router.get("/", (req, res) => {
   if (!list) {
     return res.status(404).json({ error: "List not found" });
   }
-  if (!hasListAccess(req.userId, list.user_id)) {
+  if (!canAccessList(req.userId, list)) {
     return res.status(403).json({ error: "You don't have access to that list" });
   }
 
@@ -121,27 +144,15 @@ router.get("/", (req, res) => {
 });
 
 router.get("/my-day", (req, res) => {
-  const ownerId = req.query.owner ? Number(req.query.owner) : req.userId;
-  if (!hasListAccess(req.userId, ownerId)) {
-    return res.status(403).json({ error: "You don't have access to that account" });
-  }
-  res.json(getSmartView(ownerId, "todos.my_day_date = ?", [todayStr()]));
+  res.json(getSmartView(req.userId, "todos.my_day_date = ?", [todayStr()]));
 });
 
 router.get("/important", (req, res) => {
-  const ownerId = req.query.owner ? Number(req.query.owner) : req.userId;
-  if (!hasListAccess(req.userId, ownerId)) {
-    return res.status(403).json({ error: "You don't have access to that account" });
-  }
-  res.json(getSmartView(ownerId, "todos.important = 1 AND todos.done = 0"));
+  res.json(getSmartView(req.userId, "todos.important = 1 AND todos.done = 0"));
 });
 
 router.get("/planned", (req, res) => {
-  const ownerId = req.query.owner ? Number(req.query.owner) : req.userId;
-  if (!hasListAccess(req.userId, ownerId)) {
-    return res.status(403).json({ error: "You don't have access to that account" });
-  }
-  res.json(getSmartView(ownerId, "todos.due_date IS NOT NULL AND todos.done = 0"));
+  res.json(getSmartView(req.userId, "todos.due_date IS NOT NULL AND todos.done = 0"));
 });
 
 router.post("/", (req, res) => {
@@ -159,7 +170,7 @@ router.post("/", (req, res) => {
   if (!list) {
     return res.status(400).json({ error: "Invalid list" });
   }
-  if (!hasListAccess(req.userId, list.user_id)) {
+  if (!canAccessList(req.userId, list)) {
     return res.status(403).json({ error: "You don't have access to that list" });
   }
   if (!title || !title.trim()) {
@@ -192,7 +203,7 @@ router.post("/", (req, res) => {
 
   const todo = getHydratedTodo(result.lastInsertRowid);
 
-  listMembers(list.user_id).forEach((member) =>
+  listMembers(list.id).forEach((member) =>
     sendTaskAddedEmail(member, todo).catch((err) => console.error("Failed to send task-added email:", err))
   );
 
@@ -201,8 +212,9 @@ router.post("/", (req, res) => {
 
 router.patch("/:id", (req, res) => {
   const todo = db.prepare("SELECT * FROM todos WHERE id = ?").get(req.params.id);
+  const currentList = todo ? getListById(todo.list_id) : null;
 
-  if (!todo || !hasListAccess(req.userId, todo.user_id)) {
+  if (!todo || !canAccessList(req.userId, currentList)) {
     return res.status(404).json({ error: "Todo not found" });
   }
 
@@ -218,7 +230,7 @@ router.patch("/:id", (req, res) => {
   let listId = todo.list_id;
   if (req.body.list_id !== undefined) {
     const newList = db.prepare("SELECT * FROM lists WHERE id = ?").get(req.body.list_id);
-    if (!newList || newList.user_id !== todo.user_id) {
+    if (!newList || newList.user_id !== todo.user_id || !canAccessList(req.userId, newList)) {
       return res.status(400).json({ error: "Invalid list" });
     }
     listId = newList.id;
@@ -254,15 +266,16 @@ router.patch("/:id", (req, res) => {
 
 router.delete("/:id", (req, res) => {
   const todo = db.prepare("SELECT * FROM todos WHERE id = ?").get(req.params.id);
+  const list = todo ? getListById(todo.list_id) : null;
 
-  if (!todo || !hasListAccess(req.userId, todo.user_id)) {
+  if (!todo || !canAccessList(req.userId, list)) {
     return res.status(404).json({ error: "Todo not found" });
   }
 
   db.prepare("DELETE FROM subtasks WHERE todo_id = ?").run(todo.id);
   db.prepare("DELETE FROM todos WHERE id = ?").run(todo.id);
 
-  listMembers(todo.user_id).forEach((member) =>
+  listMembers(todo.list_id).forEach((member) =>
     sendTaskDeletedEmail(member, todo).catch((err) => console.error("Failed to send task-deleted email:", err))
   );
 

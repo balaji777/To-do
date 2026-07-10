@@ -4,7 +4,7 @@ function isActiveList(activeView, listId) {
   return activeView.type === "list" && activeView.listId === listId;
 }
 
-export default function Sidebar({ lists, groups, activeView, onSelect, onCreateList, onCreateGroup }) {
+export default function Sidebar({ lists, groups, sharedLists = [], activeView, onSelect, onCreateList, onCreateGroup }) {
   const [addingList, setAddingList] = useState(false);
   const [addingGroup, setAddingGroup] = useState(false);
   const [newListName, setNewListName] = useState("");
@@ -67,6 +67,25 @@ export default function Sidebar({ lists, groups, activeView, onSelect, onCreateL
     );
   }
 
+  function sharedListButton(list) {
+    const active = isActiveList(activeView, list.id);
+    return (
+      <button
+        key={list.id}
+        onClick={() => onSelect({ type: "list", listId: list.id })}
+        className={`flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left text-sm ${
+          active
+            ? "bg-indigo-50 font-medium text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300"
+            : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+        }`}
+      >
+        <span aria-hidden="true">👥</span>
+        <span className="min-w-0 flex-1 truncate">{list.name}</span>
+        <span className="shrink-0 text-xs text-slate-400">{list.owner_nickname || list.owner_username}</span>
+      </button>
+    );
+  }
+
   return (
     <nav className="w-56 shrink-0 space-y-4 border-r border-slate-200 pr-4 dark:border-slate-700">
       <div className="space-y-0.5">
@@ -85,6 +104,13 @@ export default function Sidebar({ lists, groups, activeView, onSelect, onCreateL
         ))}
 
         <div className="space-y-0.5">{ungrouped.map(listButton)}</div>
+
+        {sharedLists.length > 0 && (
+          <div>
+            <p className="mb-1 px-3 text-xs font-semibold uppercase tracking-wide text-slate-400">Shared with Me</p>
+            <div className="space-y-0.5">{sharedLists.map(sharedListButton)}</div>
+          </div>
+        )}
       </div>
 
       <div className="space-y-1 border-t border-slate-200 pt-3 dark:border-slate-700">

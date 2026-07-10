@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import request from "supertest";
-import { buildApp, seedUser, signTestToken } from "../helpers.js";
+import { buildApp, seedUser, seedListShare, getDefaultList, signTestToken } from "../helpers.js";
 import db from "../../db.js";
 
 describe("subtasks routes", () => {
@@ -86,13 +86,11 @@ describe("subtasks routes", () => {
     expect(res.status).toBe(404);
   });
 
-  it("allows subtask access via an accepted collaboration", async () => {
+  it("allows subtask access via an accepted share on the todo's list", async () => {
     const collaborator = seedUser();
     const collaboratorToken = signTestToken(collaborator.id);
-    db.prepare("INSERT INTO collaborators (list_owner_id, user_id, status) VALUES (?, ?, 'accepted')").run(
-      user.id,
-      collaborator.id
-    );
+    const list = getDefaultList(user.id);
+    seedListShare(list.id, collaborator.id, "accepted");
 
     const res = await request(app)
       .post("/api/subtasks")

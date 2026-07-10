@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import request from "supertest";
-import { buildApp, seedUser, seedList, getDefaultList, signTestToken } from "../helpers.js";
+import { buildApp, seedUser, seedList, getDefaultList, seedListShare, signTestToken } from "../helpers.js";
 import db from "../../db.js";
 
 describe("todos routes", () => {
@@ -109,7 +109,7 @@ describe("todos routes", () => {
       expect(res.status).toBe(403);
     });
 
-    it("allows access to a list via an accepted collaboration", async () => {
+    it("allows access to a shared list via an accepted list share", async () => {
       const owner = seedUser();
       const ownerList = getDefaultList(owner.id);
       db.prepare("INSERT INTO todos (user_id, list_id, title) VALUES (?, ?, ?)").run(
@@ -117,25 +117,29 @@ describe("todos routes", () => {
         ownerList.id,
         "Owner's task"
       );
-      db.prepare("INSERT INTO collaborators (list_owner_id, user_id, status) VALUES (?, ?, 'accepted')").run(
-        owner.id,
-        user.id
-      );
+      seedListShare(ownerList.id, user.id, "accepted");
 
       const res = await authed(request(app).get(`/api/todos?list_id=${ownerList.id}`));
       expect(res.status).toBe(200);
       expect(res.body).toHaveLength(1);
     });
 
-    it("denies access via a pending (not yet accepted) collaboration", async () => {
+    it("denies access via a pending (not yet accepted) list share", async () => {
       const owner = seedUser();
       const ownerList = getDefaultList(owner.id);
-      db.prepare("INSERT INTO collaborators (list_owner_id, user_id, status) VALUES (?, ?, 'pending')").run(
-        owner.id,
-        user.id
-      );
+      seedListShare(ownerList.id, user.id, "pending");
 
       const res = await authed(request(app).get(`/api/todos?list_id=${ownerList.id}`));
+      expect(res.status).toBe(403);
+    });
+
+    it("denies access to a different, unshared list on the same owner's account", async () => {
+      const owner = seedUser();
+      const sharedList = seedList(owner.id, { name: "Shared" });
+      const otherList = seedList(owner.id, { name: "Not shared" });
+      seedListShare(sharedList.id, user.id, "accepted");
+
+      const res = await authed(request(app).get(`/api/todos?list_id=${otherList.id}`));
       expect(res.status).toBe(403);
     });
   });
@@ -231,6 +235,24 @@ describe("todos routes", () => {
       const other = seedUser();
       const otherList = getDefaultList(other.id);
       const created = await authed(request(app).post("/api/todos")).send({ title: "Original" });
+
+      const res = await authed(request(app).patch(`/api/todos/${created.body.id}`)).send({
+        list_id: otherList.id,
+      });
+      expect(res.status).toBe(400);
+    });
+
+    it("rejects a shared-list collaborator moving a todo into the owner's other, unshared list", async () => {
+      const owner = seedUser();
+      const ownerToken = signTestToken(owner.id);
+      const sharedList = seedList(owner.id, { name: "Shared" });
+      const otherList = seedList(owner.id, { name: "Not shared" });
+      seedListShare(sharedList.id, user.id, "accepted");
+
+      const created = await request(app)
+        .post("/api/todos")
+        .set("Authorization", `Bearer ${ownerToken}`)
+        .send({ title: "Owner's task", list_id: sharedList.id });
 
       const res = await authed(request(app).patch(`/api/todos/${created.body.id}`)).send({
         list_id: otherList.id,

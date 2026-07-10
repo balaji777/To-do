@@ -15,7 +15,7 @@ export default function CheckEmailNotice({ email, onBack }) {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4 dark:bg-slate-900">
+    <div className="flex min-h-screen items-center justify-center px-4">
       <div className="w-full max-w-sm rounded-xl bg-white p-8 text-center shadow-sm ring-1 ring-slate-200 dark:bg-slate-800 dark:ring-slate-700">
         <h1 className="mb-2 text-2xl font-semibold text-slate-900 dark:text-white">Check your email</h1>
         <p className="mb-6 text-sm text-slate-500 dark:text-slate-400">

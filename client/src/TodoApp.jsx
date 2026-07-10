@@ -3,6 +3,7 @@ import { api } from "./api";
 import { useAuth } from "./AuthContext";
 import ThemeToggle from "./ThemeToggle";
 import ShareModal from "./ShareModal";
+import ShareListModal from "./ShareListModal";
 import ExpensesModal from "./ExpensesModal";
 import Sidebar from "./Sidebar";
 import TaskDetail from "./TaskDetail";
@@ -31,11 +32,18 @@ export default function TodoApp() {
   const [showCompleted, setShowCompleted] = useState(true);
   const [sortBy, setSortBy] = useState("due");
 
+  // Household: account-wide sharing, used only by the Expenses feature (unrelated to
+  // per-list sharing below).
   const [collab, setCollab] = useState({ myLists: [], myCollaborators: [], invitesReceived: [] });
-  const [activeOwnerId, setActiveOwnerId] = useState(null); // null = my own account
-  const [members, setMembers] = useState([]);
+  const [activeOwnerId, setActiveOwnerId] = useState(null); // null = my own household
+  const [householdMembers, setHouseholdMembers] = useState([]);
   const [showShare, setShowShare] = useState(false);
   const [showExpenses, setShowExpenses] = useState(false);
+
+  // Per-list sharing: a specific list shown inline in the sidebar under "Shared with Me".
+  const [listShares, setListShares] = useState({ sharedWithMe: [], invitesReceived: [] });
+  const [taskMembers, setTaskMembers] = useState([]);
+  const [showShareList, setShowShareList] = useState(false);
 
   const [lists, setLists] = useState([]);
   const [groups, setGroups] = useState([]);
@@ -46,28 +54,43 @@ export default function TodoApp() {
     return api.getCollaborators(auth.token).then(setCollab).catch(() => {});
   }
 
+  function refreshListShares() {
+    return api.getMyListShares(auth.token).then(setListShares).catch(() => {});
+  }
+
   useEffect(() => {
     refreshCollab();
+    refreshListShares();
   }, [auth.token]);
 
   useEffect(() => {
-    Promise.all([
-      api.getListMembers(auth.token, activeOwnerId),
-      api.getLists(auth.token, activeOwnerId),
-      api.getListGroups(auth.token, activeOwnerId),
-    ])
-      .then(([membersData, listsData, groupsData]) => {
-        setMembers(membersData);
+    api.getListMembers(auth.token, activeOwnerId).then(setHouseholdMembers).catch((err) => setError(err.message));
+  }, [auth.token, activeOwnerId]);
+
+  useEffect(() => {
+    Promise.all([api.getLists(auth.token), api.getListGroups(auth.token)])
+      .then(([listsData, groupsData]) => {
         setLists(listsData);
         setGroups(groupsData);
       })
       .catch((err) => setError(err.message));
-  }, [auth.token, activeOwnerId]);
+  }, [auth.token]);
+
+  useEffect(() => {
+    if (activeView.type !== "list") {
+      setTaskMembers([]);
+      return;
+    }
+    api
+      .getListShares(auth.token, activeView.listId)
+      .then((data) => setTaskMembers([data.owner, ...data.shares.filter((s) => s.status === "accepted")]))
+      .catch(() => setTaskMembers([]));
+  }, [auth.token, activeView]);
 
   function fetchTodosForView() {
-    if (activeView.type === "my-day") return api.getMyDay(auth.token, activeOwnerId);
-    if (activeView.type === "important") return api.getImportant(auth.token, activeOwnerId);
-    if (activeView.type === "planned") return api.getPlanned(auth.token, activeOwnerId);
+    if (activeView.type === "my-day") return api.getMyDay(auth.token);
+    if (activeView.type === "important") return api.getImportant(auth.token);
+    if (activeView.type === "planned") return api.getPlanned(auth.token);
     return api.getTodos(auth.token, activeView.listId);
   }
 
@@ -81,7 +104,7 @@ export default function TodoApp() {
     setLoading(true);
     refreshTodos().finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [auth.token, activeOwnerId, activeView]);
+  }, [auth.token, activeView]);
 
   async function handleAdd(e) {
     e.preventDefault();
@@ -148,18 +171,26 @@ export default function TodoApp() {
   async function handleLeaveList(membershipId) {
     await api.removeCollaborator(auth.token, membershipId);
     setActiveOwnerId(null);
-    setActiveView({ type: "my-day" });
     await refreshCollab();
   }
 
   function handleSwitchOwner(ownerId) {
     setActiveOwnerId(ownerId);
-    setActiveView({ type: "my-day" });
+  }
+
+  async function handleAcceptListShare(id) {
+    await api.acceptListShare(auth.token, id);
+    await refreshListShares();
+  }
+
+  async function handleDeclineListShare(id) {
+    await api.declineListShare(auth.token, id);
+    await refreshListShares();
   }
 
   async function handleCreateList(name, groupId) {
     try {
-      const list = await api.addList(auth.token, name, groupId, activeOwnerId);
+      const list = await api.addList(auth.token, name, groupId);
       setLists((prev) => [...prev, list]);
       setActiveView({ type: "list", listId: list.id });
     } catch (err) {
@@ -169,7 +200,7 @@ export default function TodoApp() {
 
   async function handleCreateGroup(name) {
     try {
-      const group = await api.addListGroup(auth.token, name, activeOwnerId);
+      const group = await api.addListGroup(auth.token, name);
       setGroups((prev) => [...prev, group]);
     } catch (err) {
       setError(err.message);
@@ -213,22 +244,27 @@ export default function TodoApp() {
   const activeListEntry = collab.myLists.find((l) => l.id === activeOwnerId);
   const detailTodo = todos.find((t) => t.id === detailTodoId);
   const canQuickAdd = activeView.type === "list" || activeView.type === "my-day";
+  const ownsActiveList = activeView.type === "list" && lists.some((l) => l.id === activeView.listId);
 
   function memberName(userId) {
-    const member = members.find((m) => m.id === userId);
+    const member = taskMembers.find((m) => m.id === userId);
     if (!member) return "Collaborator";
     return member.nickname || member.username;
   }
 
   const viewTitle =
-    VIEW_TITLES[activeView.type] || lists.find((l) => l.id === activeView.listId)?.name || "Tasks";
+    VIEW_TITLES[activeView.type] ||
+    lists.find((l) => l.id === activeView.listId)?.name ||
+    listShares.sharedWithMe.find((l) => l.id === activeView.listId)?.name ||
+    "Tasks";
 
   return (
-    <div className="min-h-screen bg-slate-50 px-4 py-10 dark:bg-slate-900">
+    <div className="min-h-screen px-4 py-10">
       <div className="mx-auto flex w-full max-w-4xl gap-6">
         <Sidebar
           lists={lists}
           groups={groups}
+          sharedLists={listShares.sharedWithMe}
           activeView={activeView}
           onSelect={setActiveView}
           onCreateList={handleCreateList}
@@ -255,7 +291,15 @@ export default function TodoApp() {
               )}
             </div>
             <div className="flex items-center gap-4">
-              {members.length > 1 && (
+              {ownsActiveList && (
+                <button
+                  onClick={() => setShowShareList(true)}
+                  className="text-sm text-indigo-600 hover:text-indigo-500 dark:text-indigo-400"
+                >
+                  Share list
+                </button>
+              )}
+              {householdMembers.length > 1 && (
                 <button
                   onClick={() => setShowExpenses(true)}
                   className="text-sm text-indigo-600 hover:text-indigo-500 dark:text-indigo-400"
@@ -268,14 +312,14 @@ export default function TodoApp() {
                   onClick={() => handleLeaveList(activeListEntry?.membership_id)}
                   className="text-sm text-rose-600 hover:text-rose-500 dark:text-rose-400"
                 >
-                  Leave list
+                  Leave household
                 </button>
               ) : (
                 <button
                   onClick={() => setShowShare(true)}
                   className="text-sm text-indigo-600 hover:text-indigo-500 dark:text-indigo-400"
                 >
-                  Share
+                  Household
                 </button>
               )}
               <ThemeToggle />
@@ -285,15 +329,15 @@ export default function TodoApp() {
             </div>
           </div>
 
-          {collab.invitesReceived.length > 0 && (
+          {(collab.invitesReceived.length > 0 || listShares.invitesReceived.length > 0) && (
             <div className="mb-6 space-y-2">
               {collab.invitesReceived.map((invite) => (
                 <div
-                  key={invite.id}
+                  key={`household-${invite.id}`}
                   className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-indigo-50 px-4 py-2 text-sm ring-1 ring-indigo-200 dark:bg-indigo-950/40 dark:ring-indigo-800"
                 >
                   <span className="text-indigo-800 dark:text-indigo-200">
-                    <strong>{invite.nickname || invite.username}</strong> invited you to collaborate on their lists.
+                    <strong>{invite.nickname || invite.username}</strong> invited you to their household.
                   </span>
                   <div className="flex gap-2">
                     <button
@@ -304,6 +348,31 @@ export default function TodoApp() {
                     </button>
                     <button
                       onClick={() => handleDeclineInvite(invite.id)}
+                      className="rounded bg-white px-2 py-1 text-xs font-medium text-slate-600 ring-1 ring-slate-300 hover:bg-slate-50 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-600"
+                    >
+                      Decline
+                    </button>
+                  </div>
+                </div>
+              ))}
+              {listShares.invitesReceived.map((invite) => (
+                <div
+                  key={`list-${invite.share_id}`}
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-indigo-50 px-4 py-2 text-sm ring-1 ring-indigo-200 dark:bg-indigo-950/40 dark:ring-indigo-800"
+                >
+                  <span className="text-indigo-800 dark:text-indigo-200">
+                    <strong>{invite.owner_nickname || invite.owner_username}</strong> shared the list &quot;
+                    {invite.list_name}&quot; with you.
+                  </span>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleAcceptListShare(invite.share_id)}
+                      className="rounded bg-indigo-600 px-2 py-1 text-xs font-medium text-white hover:bg-indigo-500"
+                    >
+                      Accept
+                    </button>
+                    <button
+                      onClick={() => handleDeclineListShare(invite.share_id)}
                       className="rounded bg-white px-2 py-1 text-xs font-medium text-slate-600 ring-1 ring-slate-300 hover:bg-slate-50 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-600"
                     >
                       Decline
@@ -397,7 +466,7 @@ export default function TodoApp() {
                           {todo.list_name}
                         </span>
                       )}
-                      {members.length > 1 && todo.created_by && (
+                      {taskMembers.length > 1 && todo.created_by && (
                         <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-xs text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-300">
                           {todo.created_by === auth.id ? "You" : memberName(todo.created_by)}
                         </span>
@@ -447,10 +516,18 @@ export default function TodoApp() {
         />
       )}
 
+      {showShareList && (
+        <ShareListModal
+          listId={activeView.listId}
+          listName={viewTitle}
+          onClose={() => setShowShareList(false)}
+        />
+      )}
+
       {showExpenses && (
         <ExpensesModal
           listOwnerId={activeOwnerId ?? auth.id}
-          members={members}
+          members={householdMembers}
           onClose={() => setShowExpenses(false)}
         />
       )}

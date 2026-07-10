@@ -41,10 +41,17 @@ describe("list-groups routes", () => {
       expect(res.body).toHaveLength(2);
     });
 
-    it("denies access to another account's groups without collaboration", async () => {
+    it("ignores an owner query param and always returns the caller's own groups", async () => {
       const other = seedUser();
+      const otherToken = signTestToken(other.id);
+      await request(app)
+        .post("/api/list-groups")
+        .set("Authorization", `Bearer ${otherToken}`)
+        .send({ name: "Other's group" });
+
       const res = await authed(request(app).get(`/api/list-groups?owner=${other.id}`));
-      expect(res.status).toBe(403);
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveLength(0);
     });
   });
 
