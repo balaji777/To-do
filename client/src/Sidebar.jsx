@@ -12,6 +12,8 @@ export default function Sidebar({
   onSelect,
   onCreateList,
   onCreateGroup,
+  onMoveList = () => {},
+  onMoveGroup = () => {},
   open = false,
   onClose = () => {},
 }) {
@@ -19,6 +21,28 @@ export default function Sidebar({
   const [addingGroup, setAddingGroup] = useState(false);
   const [newListName, setNewListName] = useState("");
   const [newGroupName, setNewGroupName] = useState("");
+  const [dragListId, setDragListId] = useState(null);
+  const [dragGroupId, setDragGroupId] = useState(null);
+  const [collapsedGroups, setCollapsedGroups] = useState(() => {
+    try {
+      return new Set(JSON.parse(localStorage.getItem("collapsedGroups")) || []);
+    } catch {
+      return new Set();
+    }
+  });
+
+  function toggleGroup(groupId) {
+    setCollapsedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(groupId)) {
+        next.delete(groupId);
+      } else {
+        next.add(groupId);
+      }
+      localStorage.setItem("collapsedGroups", JSON.stringify([...next]));
+      return next;
+    });
+  }
 
   const grouped = groups.map((group) => ({
     group,
@@ -48,6 +72,53 @@ export default function Sidebar({
     setAddingGroup(false);
   }
 
+  function handleDragOver(e) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+  }
+
+  function handleListDragStart(e, list) {
+    e.stopPropagation();
+    setDragListId(list.id);
+    e.dataTransfer.effectAllowed = "move";
+  }
+
+  function handleListDrop(e, targetList) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (dragListId == null || dragListId === targetList.id) return;
+    onMoveList(dragListId, { beforeId: targetList.id, groupId: targetList.group_id || null });
+    setDragListId(null);
+  }
+
+  function handleGroupDragStart(e, group) {
+    e.stopPropagation();
+    setDragGroupId(group.id);
+    e.dataTransfer.effectAllowed = "move";
+  }
+
+  function handleGroupOrListDrop(e, group) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (dragGroupId != null) {
+      if (dragGroupId !== group.id) onMoveGroup(dragGroupId, group.id);
+      setDragGroupId(null);
+      return;
+    }
+    if (dragListId != null) {
+      onMoveList(dragListId, { beforeId: null, groupId: group.id });
+      setDragListId(null);
+    }
+  }
+
+  function handleUngroupedDrop(e) {
+    e.preventDefault();
+    if (dragListId != null) {
+      onMoveList(dragListId, { beforeId: null, groupId: null });
+      setDragListId(null);
+    }
+  }
+
   function smartButton(type, label, icon) {
     const active = activeView.type === type;
     return (
@@ -70,8 +141,15 @@ export default function Sidebar({
     return (
       <button
         key={list.id}
+        draggable
+        onDragStart={(e) => handleListDragStart(e, list)}
+        onDragOver={handleDragOver}
+        onDrop={(e) => handleListDrop(e, list)}
+        onDragEnd={() => setDragListId(null)}
         onClick={() => select({ type: "list", listId: list.id })}
-        className={`flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left text-sm ${
+        className={`flex w-full cursor-grab items-center gap-2 rounded-md px-3 py-1.5 text-left text-sm ${
+          dragListId === list.id ? "opacity-40" : ""
+        } ${
           active
             ? "bg-indigo-50 font-medium text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300"
             : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
@@ -124,14 +202,38 @@ export default function Sidebar({
       </div>
 
       <div className="space-y-3">
-        {grouped.map(({ group, lists: groupLists }) => (
-          <div key={group.id}>
-            <p className="mb-1 px-3 text-xs font-semibold uppercase tracking-wide text-slate-400">{group.name}</p>
-            <div className="space-y-0.5">{groupLists.map(listButton)}</div>
-          </div>
-        ))}
+        {grouped.map(({ group, lists: groupLists }) => {
+          const collapsed = collapsedGroups.has(group.id);
+          return (
+            <div key={group.id} onDragOver={handleDragOver} onDrop={(e) => handleGroupOrListDrop(e, group)}>
+              <button
+                draggable
+                onDragStart={(e) => handleGroupDragStart(e, group)}
+                onDragEnd={() => setDragGroupId(null)}
+                onClick={() => toggleGroup(group.id)}
+                aria-expanded={!collapsed}
+                className={`mb-1 flex w-full cursor-grab items-center gap-1 px-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 ${
+                  dragGroupId === group.id ? "opacity-40" : ""
+                }`}
+              >
+                <span aria-hidden="true" className="text-[0.6rem]">
+                  {collapsed ? "▸" : "▾"}
+                </span>
+                {group.name}
+              </button>
+              {!collapsed &&
+                (groupLists.length > 0 ? (
+                  <div className="space-y-0.5">{groupLists.map(listButton)}</div>
+                ) : (
+                  <p className="px-3 py-1 text-xs italic text-slate-400 dark:text-slate-500">No lists yet</p>
+                ))}
+            </div>
+          );
+        })}
 
-        <div className="space-y-0.5">{ungrouped.map(listButton)}</div>
+        <div className="space-y-0.5" onDragOver={handleDragOver} onDrop={handleUngroupedDrop}>
+          {ungrouped.map(listButton)}
+        </div>
 
         {sharedLists.length > 0 && (
           <div>

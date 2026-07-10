@@ -208,6 +208,57 @@ export default function TodoApp() {
     }
   }
 
+  async function handleMoveList(listId, { beforeId = null, groupId = null }) {
+    const moved = lists.find((l) => l.id === listId);
+    if (!moved) return;
+    const rest = lists.filter((l) => l.id !== listId);
+    let insertAt = rest.length;
+    if (beforeId != null) {
+      const idx = rest.findIndex((l) => l.id === beforeId);
+      if (idx !== -1) insertAt = idx;
+    }
+    const next = [...rest.slice(0, insertAt), { ...moved, group_id: groupId }, ...rest.slice(insertAt)].map(
+      (l, idx) => ({ ...l, ordering: idx })
+    );
+    const changed = next.filter((l) => {
+      const original = lists.find((p) => p.id === l.id);
+      return !original || original.ordering !== l.ordering || original.group_id !== l.group_id;
+    });
+    setLists(next);
+    try {
+      await Promise.all(
+        changed.map((l) => api.updateList(auth.token, l.id, { ordering: l.ordering, group_id: l.group_id }))
+      );
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  async function handleMoveGroup(groupId, beforeId = null) {
+    const moved = groups.find((g) => g.id === groupId);
+    if (!moved) return;
+    const rest = groups.filter((g) => g.id !== groupId);
+    let insertAt = rest.length;
+    if (beforeId != null) {
+      const idx = rest.findIndex((g) => g.id === beforeId);
+      if (idx !== -1) insertAt = idx;
+    }
+    const next = [...rest.slice(0, insertAt), moved, ...rest.slice(insertAt)].map((g, idx) => ({
+      ...g,
+      ordering: idx,
+    }));
+    const changed = next.filter((g) => {
+      const original = groups.find((p) => p.id === g.id);
+      return !original || original.ordering !== g.ordering;
+    });
+    setGroups(next);
+    try {
+      await Promise.all(changed.map((g) => api.updateListGroup(auth.token, g.id, { ordering: g.ordering })));
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
   function handleDetailUpdate(patch) {
     setTodos((prev) => prev.map((t) => (t.id === patch.id ? { ...t, ...patch } : t)));
   }
@@ -270,6 +321,8 @@ export default function TodoApp() {
           onSelect={setActiveView}
           onCreateList={handleCreateList}
           onCreateGroup={handleCreateGroup}
+          onMoveList={handleMoveList}
+          onMoveGroup={handleMoveGroup}
           open={sidebarOpen}
           onClose={() => setSidebarOpen(false)}
         />

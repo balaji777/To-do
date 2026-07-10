@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import Sidebar from "../Sidebar";
 
@@ -10,10 +10,19 @@ function renderSidebar(overrides = {}) {
     onSelect: vi.fn(),
     onCreateList: vi.fn(),
     onCreateGroup: vi.fn(),
+    onMoveList: vi.fn(),
+    onMoveGroup: vi.fn(),
     ...overrides,
   };
   render(<Sidebar {...props} />);
   return props;
+}
+
+function drag(source, target) {
+  const dataTransfer = {};
+  fireEvent.dragStart(source, { dataTransfer });
+  fireEvent.dragOver(target, { dataTransfer });
+  fireEvent.drop(target, { dataTransfer });
 }
 
 describe("Sidebar", () => {
@@ -103,5 +112,118 @@ describe("Sidebar", () => {
   it("does not render a backdrop when the drawer is closed", () => {
     renderSidebar({ open: false });
     expect(document.querySelector(".bg-black\\/40")).not.toBeInTheDocument();
+  });
+
+  it("reorders ungrouped lists by dragging one before another", () => {
+    const props = renderSidebar({
+      lists: [
+        { id: 1, name: "Groceries", group_id: null },
+        { id: 2, name: "Errands", group_id: null },
+      ],
+    });
+    const groceries = screen.getByRole("button", { name: /groceries/i });
+    const errands = screen.getByRole("button", { name: /errands/i });
+    drag(errands, groceries);
+    expect(props.onMoveList).toHaveBeenCalledWith(2, { beforeId: 1, groupId: null });
+  });
+
+  it("moves a list into a group by dropping it on the group header", () => {
+    const props = renderSidebar({
+      groups: [{ id: 1, name: "Home" }],
+      lists: [{ id: 2, name: "Groceries", group_id: null }],
+    });
+    const groceries = screen.getByRole("button", { name: /groceries/i });
+    const groupHeader = screen.getByText("Home");
+    drag(groceries, groupHeader);
+    expect(props.onMoveList).toHaveBeenCalledWith(2, { beforeId: null, groupId: 1 });
+  });
+
+  it("moves a list out of a group by dropping it in the ungrouped area", () => {
+    const props = renderSidebar({
+      groups: [{ id: 1, name: "Home" }],
+      lists: [
+        { id: 2, name: "Chores", group_id: 1 },
+        { id: 3, name: "Errands", group_id: null },
+      ],
+    });
+    const chores = screen.getByRole("button", { name: /chores/i });
+    const errands = screen.getByRole("button", { name: /errands/i });
+    drag(chores, errands);
+    expect(props.onMoveList).toHaveBeenCalledWith(2, { beforeId: 3, groupId: null });
+  });
+
+  it("collapses and expands a group when its header is clicked", async () => {
+    const user = userEvent.setup();
+    renderSidebar({
+      groups: [{ id: 1, name: "Home" }],
+      lists: [{ id: 2, name: "Chores", group_id: 1 }],
+    });
+    expect(screen.getByRole("button", { name: /chores/i })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /home/i }));
+    expect(screen.queryByRole("button", { name: /chores/i })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /home/i }));
+    expect(screen.getByRole("button", { name: /chores/i })).toBeInTheDocument();
+  });
+
+  it("persists collapsed groups to localStorage and restores them on mount", async () => {
+    const user = userEvent.setup();
+    const props = {
+      groups: [{ id: 1, name: "Home" }],
+      lists: [{ id: 2, name: "Chores", group_id: 1 }],
+    };
+    const { unmount } = render(
+      <Sidebar
+        {...props}
+        activeView={{ type: "my-day" }}
+        onSelect={vi.fn()}
+        onCreateList={vi.fn()}
+        onCreateGroup={vi.fn()}
+      />
+    );
+    await user.click(screen.getByRole("button", { name: /home/i }));
+    expect(JSON.parse(localStorage.getItem("collapsedGroups"))).toEqual([1]);
+    unmount();
+
+    render(
+      <Sidebar
+        {...props}
+        activeView={{ type: "my-day" }}
+        onSelect={vi.fn()}
+        onCreateList={vi.fn()}
+        onCreateGroup={vi.fn()}
+      />
+    );
+    expect(screen.queryByRole("button", { name: /chores/i })).not.toBeInTheDocument();
+  });
+
+  it("shows a placeholder under an empty group", () => {
+    renderSidebar({ groups: [{ id: 1, name: "Home" }] });
+    expect(screen.getByText(/no lists yet/i)).toBeInTheDocument();
+  });
+
+  it("still accepts a list dropped on a collapsed group", async () => {
+    const user = userEvent.setup();
+    const props = renderSidebar({
+      groups: [{ id: 1, name: "Home" }],
+      lists: [{ id: 2, name: "Groceries", group_id: null }],
+    });
+    await user.click(screen.getByRole("button", { name: /home/i }));
+    drag(screen.getByRole("button", { name: /groceries/i }), screen.getByRole("button", { name: /home/i }));
+    expect(props.onMoveList).toHaveBeenCalledWith(2, { beforeId: null, groupId: 1 });
+  });
+
+  it("reorders groups by dragging one group header onto another", () => {
+    const props = renderSidebar({
+      groups: [
+        { id: 1, name: "Home" },
+        { id: 2, name: "Work" },
+      ],
+    });
+    const work = screen.getByText("Work");
+    const home = screen.getByText("Home");
+    drag(work, home);
+    expect(props.onMoveGroup).toHaveBeenCalledWith(2, 1);
   });
 });
