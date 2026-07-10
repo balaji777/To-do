@@ -60,6 +60,29 @@ export const api = {
   acceptListShare: (token, id) => request(`/list-shares/${id}/accept`, { method: "POST", token }),
   declineListShare: (token, id) => request(`/list-shares/${id}/decline`, { method: "POST", token }),
   removeListShare: (token, id) => request(`/list-shares/${id}`, { method: "DELETE", token }),
+  getAttachments: (token, todoId) => request(`/attachments?todo=${todoId}`, { token }),
+  // Multipart, so it bypasses the JSON `request` helper (the browser sets the
+  // multipart boundary header itself).
+  uploadAttachment: async (token, todoId, file) => {
+    const form = new FormData();
+    form.append("file", file);
+    const res = await fetch(`${BASE_URL}/attachments/${todoId}`, {
+      method: "POST",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: form,
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) throw new Error(data?.error || "Upload failed");
+    return data;
+  },
+  downloadAttachment: async (token, id) => {
+    const res = await fetch(`${BASE_URL}/attachments/${id}/download`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) throw new Error("Download failed");
+    return res.blob();
+  },
+  deleteAttachment: (token, id) => request(`/attachments/${id}`, { method: "DELETE", token }),
   getSubtasks: (token, todoId) => request(`/subtasks?todo=${todoId}`, { token }),
   addSubtask: (token, todoId, title) =>
     request("/subtasks", { method: "POST", body: { todo_id: todoId, title }, token }),

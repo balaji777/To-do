@@ -9,6 +9,7 @@ import listGroupRoutes from "./routes/list-groups.js";
 import subtaskRoutes from "./routes/subtasks.js";
 import expenseRoutes from "./routes/expenses.js";
 import listShareRoutes from "./routes/list-shares.js";
+import attachmentRoutes from "./routes/attachments.js";
 import { startReminderScheduler } from "./reminders.js";
 
 if (!process.env.JWT_SECRET) {
@@ -37,6 +38,7 @@ app.use("/api/list-groups", listGroupRoutes);
 app.use("/api/subtasks", subtaskRoutes);
 app.use("/api/expenses", expenseRoutes);
 app.use("/api/list-shares", listShareRoutes);
+app.use("/api/attachments", attachmentRoutes);
 
 app.get("/api/health", (req, res) => res.json({ ok: true }));
 

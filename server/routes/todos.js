@@ -2,6 +2,7 @@ import { Router } from "express";
 import db from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
 import { sendTaskAddedEmail, sendTaskDeletedEmail } from "../email.js";
+import { deleteAttachmentsForTodoIds } from "../attachment-storage.js";
 
 const router = Router();
 
@@ -277,6 +278,7 @@ router.delete("/:id", (req, res) => {
     return res.status(404).json({ error: "Todo not found" });
   }
 
+  deleteAttachmentsForTodoIds([todo.id]);
   db.prepare("DELETE FROM subtasks WHERE todo_id = ?").run(todo.id);
   db.prepare("DELETE FROM todos WHERE id = ?").run(todo.id);
 

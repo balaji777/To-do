@@ -37,6 +37,10 @@ vi.mock("../api", () => ({
     addSubtask: vi.fn(),
     updateSubtask: vi.fn(),
     deleteSubtask: vi.fn(),
+    getAttachments: vi.fn(),
+    uploadAttachment: vi.fn(),
+    downloadAttachment: vi.fn(),
+    deleteAttachment: vi.fn(),
   },
 }));
 
@@ -84,6 +88,7 @@ beforeEach(() => {
   api.getListGroups.mockResolvedValue([]);
   api.getMyListShares.mockResolvedValue({ sharedWithMe: [], invitesReceived: [] });
   api.getListShares.mockResolvedValue({ owner: { id: 1, username: "alice", nickname: "Alice" }, shares: [] });
+  api.getAttachments.mockResolvedValue([]);
 });
 
 describe("TodoApp", () => {

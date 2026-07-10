@@ -2,6 +2,7 @@ import { Router } from "express";
 import db from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
 import { canAccessList } from "./todos.js";
+import { deleteAttachmentsForTodoIds } from "../attachment-storage.js";
 
 const router = Router();
 
@@ -86,6 +87,8 @@ router.delete("/:id", (req, res) => {
   }
 
   // Foreign key actions aren't enforced (no PRAGMA foreign_keys), so clear child rows manually.
+  const todoIds = db.prepare("SELECT id FROM todos WHERE list_id = ?").all(list.id).map((t) => t.id);
+  deleteAttachmentsForTodoIds(todoIds);
   db.prepare("DELETE FROM subtasks WHERE todo_id IN (SELECT id FROM todos WHERE list_id = ?)").run(list.id);
   db.prepare("DELETE FROM todos WHERE list_id = ?").run(list.id);
   db.prepare("DELETE FROM list_shares WHERE list_id = ?").run(list.id);

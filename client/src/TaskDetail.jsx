@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import SubtaskList from "./SubtaskList";
 
@@ -8,9 +8,54 @@ function openDatePicker(e) {
   }
 }
 
+function formatBytes(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 export default function TaskDetail({ todo, token, onClose, onUpdate, onDelete }) {
   const [notes, setNotes] = useState(todo.notes || "");
   const [savingNotes, setSavingNotes] = useState(false);
+  const [attachments, setAttachments] = useState([]);
+  const [uploading, setUploading] = useState(false);
+  const [attachmentError, setAttachmentError] = useState("");
+  const fileInputRef = useRef(null);
+
+  useEffect(() => {
+    api.getAttachments(token, todo.id).then(setAttachments).catch(() => setAttachments([]));
+  }, [token, todo.id]);
+
+  async function handleFileChange(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    setAttachmentError("");
+    setUploading(true);
+    try {
+      const created = await api.uploadAttachment(token, todo.id, file);
+      setAttachments((prev) => [...prev, created]);
+    } catch (err) {
+      setAttachmentError(err.message);
+    } finally {
+      setUploading(false);
+      e.target.value = "";
+    }
+  }
+
+  async function handleDownload(attachment) {
+    const blob = await api.downloadAttachment(token, attachment.id);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = attachment.filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function handleDeleteAttachment(id) {
+    await api.deleteAttachment(token, id);
+    setAttachments((prev) => prev.filter((a) => a.id !== id));
+  }
 
   async function patch(changes) {
     const updated = await api.updateTodo(token, todo.id, changes);
@@ -139,6 +184,42 @@ export default function TaskDetail({ todo, token, onClose, onUpdate, onDelete })
           <span aria-hidden="true">☀</span>
           {todo.my_day_date ? "Added to My Day" : "Add to My Day"}
         </button>
+
+        <div className="mb-4">
+          <p className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-400">Attachments</p>
+          {attachments.length > 0 && (
+            <ul className="mb-2 space-y-1">
+              {attachments.map((attachment) => (
+                <li key={attachment.id} className="flex items-center gap-2 text-sm">
+                  <button
+                    onClick={() => handleDownload(attachment)}
+                    className="min-w-0 flex-1 truncate text-left text-indigo-600 hover:underline dark:text-indigo-400"
+                    title={`Download ${attachment.filename}`}
+                  >
+                    📎 {attachment.filename}
+                  </button>
+                  <span className="shrink-0 text-xs text-slate-400">{formatBytes(attachment.size_bytes)}</span>
+                  <button
+                    onClick={() => handleDeleteAttachment(attachment.id)}
+                    aria-label={`Delete ${attachment.filename}`}
+                    className="shrink-0 text-slate-400 hover:text-red-500"
+                  >
+                    ✕
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" />
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploading}
+            className="rounded-md bg-slate-100 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-200 disabled:opacity-50 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600"
+          >
+            {uploading ? "Uploading..." : "+ Add file"}
+          </button>
+          {attachmentError && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{attachmentError}</p>}
+        </div>
 
         <div className="mb-4">
           <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-400">Notes</label>

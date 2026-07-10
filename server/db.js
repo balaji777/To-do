@@ -119,6 +119,17 @@ export function createDb(dbPath) {
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       UNIQUE(list_id, user_id)
     );
+
+    CREATE TABLE IF NOT EXISTS attachments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      todo_id INTEGER NOT NULL REFERENCES todos(id) ON DELETE CASCADE,
+      filename TEXT NOT NULL,
+      stored_name TEXT NOT NULL,
+      mime_type TEXT,
+      size_bytes INTEGER NOT NULL,
+      uploaded_by INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
   `);
 
   // Dev-planner-era features (categories, labels, task type/link) have been removed in

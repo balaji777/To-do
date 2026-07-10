@@ -9,6 +9,7 @@ import listGroupRoutes from "../routes/list-groups.js";
 import subtaskRoutes from "../routes/subtasks.js";
 import expenseRoutes from "../routes/expenses.js";
 import listShareRoutes from "../routes/list-shares.js";
+import attachmentRoutes from "../routes/attachments.js";
 
 export function buildApp() {
   const app = express();
@@ -21,6 +22,7 @@ export function buildApp() {
   app.use("/api/subtasks", subtaskRoutes);
   app.use("/api/expenses", expenseRoutes);
   app.use("/api/list-shares", listShareRoutes);
+  app.use("/api/attachments", attachmentRoutes);
   return app;
 }
 
