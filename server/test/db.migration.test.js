@@ -12,12 +12,15 @@ function cleanupDbFile(dbPath) {
   }
 }
 
-describe("category backfill migration", () => {
-  it("links legacy free-text categories into the categories table, idempotently", () => {
-    const dbPath = path.join(os.tmpdir(), `migration-test-${Date.now()}-${Math.random().toString(36).slice(2)}.db`);
+function tmpDbPath() {
+  return path.join(os.tmpdir(), `migration-test-${Date.now()}-${Math.random().toString(36).slice(2)}.db`);
+}
 
-    // Simulate a pre-migration database: users/todos with a legacy free-text category column,
-    // no categories table and no category_id column yet.
+describe("default list backfill migration", () => {
+  it("gives every existing user a default list and attaches their orphaned todos to it", () => {
+    const dbPath = tmpDbPath();
+
+    // Simulate a pre-migration database: users/todos with no lists table and no list_id column yet.
     const legacyDb = new Database(dbPath);
     legacyDb.exec(`
       CREATE TABLE users (
@@ -35,7 +38,6 @@ describe("category backfill migration", () => {
         done INTEGER NOT NULL DEFAULT 0,
         due_date TEXT,
         priority TEXT NOT NULL DEFAULT 'medium',
-        category TEXT,
         recurrence TEXT NOT NULL DEFAULT 'none',
         reminder_count INTEGER NOT NULL DEFAULT 0,
         created_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -44,51 +46,82 @@ describe("category backfill migration", () => {
     const userId = legacyDb
       .prepare("INSERT INTO users (username, email) VALUES (?, ?)")
       .run("alice", "alice@example.com").lastInsertRowid;
-    legacyDb.prepare("INSERT INTO todos (user_id, title, category) VALUES (?, ?, ?)").run(userId, "Fix crash", "Bug fixes");
-    legacyDb
-      .prepare("INSERT INTO todos (user_id, title, category) VALUES (?, ?, ?)")
-      .run(userId, "Fix crash 2", "bug fixes "); // same category, different case/whitespace
+    legacyDb.prepare("INSERT INTO todos (user_id, title) VALUES (?, ?)").run(userId, "Fix crash");
+    legacyDb.prepare("INSERT INTO todos (user_id, title) VALUES (?, ?)").run(userId, "Fix crash 2");
     legacyDb.close();
 
     try {
-      // Run the real migration path (schema creation + backfill) against this legacy file.
       const migrated = createDb(dbPath);
 
-      const categories = migrated.prepare("SELECT * FROM categories WHERE user_id = ?").all(userId);
-      expect(categories).toHaveLength(1);
-      expect(categories[0].name).toBe("Bug fixes");
+      const lists = migrated.prepare("SELECT * FROM lists WHERE user_id = ?").all(userId);
+      expect(lists).toHaveLength(1);
+      expect(lists[0].name).toBe("Tasks");
+      expect(lists[0].is_default).toBe(1);
 
       const todos = migrated.prepare("SELECT * FROM todos WHERE user_id = ? ORDER BY id").all(userId);
-      expect(todos[0].category_id).toBe(categories[0].id);
-      expect(todos[1].category_id).toBe(categories[0].id);
+      expect(todos[0].list_id).toBe(lists[0].id);
+      expect(todos[1].list_id).toBe(lists[0].id);
 
       migrated.close();
 
-      // Re-running the migration (as happens on every server restart) must not duplicate categories.
+      // Re-running the migration (as happens on every server restart) must not duplicate lists.
       const remigrated = createDb(dbPath);
-      const categoriesAfterRerun = remigrated.prepare("SELECT * FROM categories WHERE user_id = ?").all(userId);
-      expect(categoriesAfterRerun).toHaveLength(1);
+      const listsAfterRerun = remigrated.prepare("SELECT * FROM lists WHERE user_id = ?").all(userId);
+      expect(listsAfterRerun).toHaveLength(1);
       remigrated.close();
     } finally {
       cleanupDbFile(dbPath);
     }
   });
 
-  it("leaves todos without a category untouched", () => {
-    const dbPath = path.join(os.tmpdir(), `migration-test-${Date.now()}-${Math.random().toString(36).slice(2)}.db`);
+  it("gives a user with zero todos a default list too", () => {
+    const dbPath = tmpDbPath();
 
     try {
       const db = createDb(dbPath);
       const userId = db
         .prepare("INSERT INTO users (username, email) VALUES (?, ?)")
         .run("bob", "bob@example.com").lastInsertRowid;
-      db.prepare("INSERT INTO todos (user_id, title) VALUES (?, ?)").run(userId, "No category");
 
-      const todo = db.prepare("SELECT * FROM todos WHERE user_id = ?").get(userId);
-      expect(todo.category_id).toBeNull();
-      expect(db.prepare("SELECT COUNT(*) AS count FROM categories WHERE user_id = ?").get(userId).count).toBe(0);
-
+      // The INSERT above ran before this createDb call's own migration pass, so run it again
+      // the way a server restart would, to backfill the list for this brand-new user row.
       db.close();
+      const remigrated = createDb(dbPath);
+      const list = remigrated.prepare("SELECT * FROM lists WHERE user_id = ? AND is_default = 1").get(userId);
+      expect(list).toBeTruthy();
+      expect(list.name).toBe("Tasks");
+      remigrated.close();
+    } finally {
+      cleanupDbFile(dbPath);
+    }
+  });
+
+  it("drops the legacy categories/labels tables if they exist", () => {
+    const dbPath = tmpDbPath();
+
+    const legacyDb = new Database(dbPath);
+    legacyDb.exec(`
+      CREATE TABLE users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT UNIQUE NOT NULL,
+        email TEXT UNIQUE NOT NULL,
+        password_hash TEXT,
+        google_id TEXT UNIQUE,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE TABLE categories (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, name TEXT);
+      CREATE TABLE labels (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, name TEXT);
+      CREATE TABLE todo_labels (todo_id INTEGER, label_id INTEGER);
+    `);
+    legacyDb.close();
+
+    try {
+      const migrated = createDb(dbPath);
+      const tables = migrated
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('categories', 'labels', 'todo_labels')")
+        .all();
+      expect(tables).toHaveLength(0);
+      migrated.close();
     } finally {
       cleanupDbFile(dbPath);
     }

@@ -3,7 +3,7 @@ import crypto from "node:crypto";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { OAuth2Client } from "google-auth-library";
-import db from "../db.js";
+import db, { ensureDefaultListForUser } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
 import { sendVerificationEmail } from "../email.js";
 
@@ -70,6 +70,7 @@ router.post("/google", async (req, res) => {
       .prepare("INSERT INTO users (username, email, google_id, email_verified) VALUES (?, ?, ?, 1)")
       .run(username, payload.email, payload.sub);
     user = db.prepare("SELECT * FROM users WHERE id = ?").get(result.lastInsertRowid);
+    ensureDefaultListForUser(user.id);
   } else if (!user.google_id) {
     db.prepare("UPDATE users SET google_id = ?, email_verified = 1 WHERE id = ?").run(payload.sub, user.id);
   }
@@ -119,6 +120,7 @@ router.post("/signup", async (req, res) => {
     .prepare("INSERT INTO users (username, email, password_hash) VALUES (?, ?, ?)")
     .run(username, email, passwordHash);
   const user = db.prepare("SELECT * FROM users WHERE id = ?").get(result.lastInsertRowid);
+  ensureDefaultListForUser(user.id);
 
   const token = issueVerificationToken(user.id);
   sendVerificationEmail(user, token).catch((err) => console.error("Failed to send verification email:", err));

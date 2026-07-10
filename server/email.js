@@ -38,7 +38,6 @@ function formatDueDate(dueDate) {
 const PRIORITY_COLORS = { low: "#059669", medium: "#d97706", high: "#e11d48" };
 const PRIORITY_LABELS = { low: "Low", medium: "Medium", high: "High" };
 const RECURRENCE_LABELS = { daily: "Daily", weekly: "Weekly", monthly: "Monthly" };
-const TYPE_LABELS = { bug: "Bug", feature: "Feature", chore: "Chore", task: "Task" };
 
 function taskMetaTable(todo) {
   const rows = [];
@@ -50,25 +49,14 @@ function taskMetaTable(todo) {
   rows.push(
     `<tr><td style="padding:4px 12px 4px 0;color:#64748b;">Priority</td><td style="padding:4px 0;font-weight:600;color:${PRIORITY_COLORS[todo.priority] || "#0f172a"};">${PRIORITY_LABELS[todo.priority] || todo.priority}</td></tr>`
   );
-  if (todo.type && TYPE_LABELS[todo.type] && todo.type !== "task") {
+  if (todo.important) {
     rows.push(
-      `<tr><td style="padding:4px 12px 4px 0;color:#64748b;">Type</td><td style="padding:4px 0;color:#0f172a;">${TYPE_LABELS[todo.type]}</td></tr>`
-    );
-  }
-  const categoryLabel = todo.category_name || todo.category;
-  if (categoryLabel) {
-    rows.push(
-      `<tr><td style="padding:4px 12px 4px 0;color:#64748b;">Category</td><td style="padding:4px 0;color:#0f172a;">${escapeHtml(categoryLabel)}</td></tr>`
+      `<tr><td style="padding:4px 12px 4px 0;color:#64748b;">Important</td><td style="padding:4px 0;color:#0f172a;">★ Yes</td></tr>`
     );
   }
   if (todo.recurrence && todo.recurrence !== "none") {
     rows.push(
       `<tr><td style="padding:4px 12px 4px 0;color:#64748b;">Repeats</td><td style="padding:4px 0;color:#0f172a;">${RECURRENCE_LABELS[todo.recurrence]}</td></tr>`
-    );
-  }
-  if (todo.link) {
-    rows.push(
-      `<tr><td style="padding:4px 12px 4px 0;color:#64748b;">Link</td><td style="padding:4px 0;"><a href="${escapeHtml(todo.link)}" style="color:#4f46e5;">${escapeHtml(todo.link)}</a></td></tr>`
     );
   }
   return `<table cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:16px 0;font-size:14px;">${rows.join("")}</table>`;

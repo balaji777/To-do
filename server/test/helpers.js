@@ -1,12 +1,13 @@
 import express from "express";
 import jwt from "jsonwebtoken";
-import db from "../db.js";
+import db, { ensureDefaultListForUser } from "../db.js";
 import authRoutes from "../routes/auth.js";
 import todoRoutes from "../routes/todos.js";
 import collaboratorRoutes from "../routes/collaborators.js";
-import categoryRoutes from "../routes/categories.js";
-import labelRoutes from "../routes/labels.js";
+import listRoutes from "../routes/lists.js";
+import listGroupRoutes from "../routes/list-groups.js";
 import subtaskRoutes from "../routes/subtasks.js";
+import expenseRoutes from "../routes/expenses.js";
 
 export function buildApp() {
   const app = express();
@@ -14,9 +15,10 @@ export function buildApp() {
   app.use("/api/auth", authRoutes);
   app.use("/api/todos", todoRoutes);
   app.use("/api/collaborators", collaboratorRoutes);
-  app.use("/api/categories", categoryRoutes);
-  app.use("/api/labels", labelRoutes);
+  app.use("/api/lists", listRoutes);
+  app.use("/api/list-groups", listGroupRoutes);
   app.use("/api/subtasks", subtaskRoutes);
+  app.use("/api/expenses", expenseRoutes);
   return app;
 }
 
@@ -36,5 +38,18 @@ export function seedUser(overrides = {}) {
   const result = db
     .prepare("INSERT INTO users (username, email, google_id, nickname) VALUES (?, ?, ?, ?)")
     .run(username, email, googleId, nickname);
+  ensureDefaultListForUser(result.lastInsertRowid);
   return db.prepare("SELECT * FROM users WHERE id = ?").get(result.lastInsertRowid);
+}
+
+export function seedList(userId, overrides = {}) {
+  const name = overrides.name ?? "My List";
+  const result = db
+    .prepare("INSERT INTO lists (user_id, group_id, name, ordering) VALUES (?, ?, ?, ?)")
+    .run(userId, overrides.group_id ?? null, name, overrides.ordering ?? 0);
+  return db.prepare("SELECT * FROM lists WHERE id = ?").get(result.lastInsertRowid);
+}
+
+export function getDefaultList(userId) {
+  return db.prepare("SELECT * FROM lists WHERE user_id = ? AND is_default = 1").get(userId);
 }
