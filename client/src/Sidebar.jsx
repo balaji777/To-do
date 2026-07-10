@@ -4,7 +4,17 @@ function isActiveList(activeView, listId) {
   return activeView.type === "list" && activeView.listId === listId;
 }
 
-export default function Sidebar({ lists, groups, sharedLists = [], activeView, onSelect, onCreateList, onCreateGroup }) {
+export default function Sidebar({
+  lists,
+  groups,
+  sharedLists = [],
+  activeView,
+  onSelect,
+  onCreateList,
+  onCreateGroup,
+  open = false,
+  onClose = () => {},
+}) {
   const [addingList, setAddingList] = useState(false);
   const [addingGroup, setAddingGroup] = useState(false);
   const [newListName, setNewListName] = useState("");
@@ -16,12 +26,18 @@ export default function Sidebar({ lists, groups, sharedLists = [], activeView, o
   }));
   const ungrouped = lists.filter((l) => !l.group_id);
 
+  function select(view) {
+    onSelect(view);
+    onClose();
+  }
+
   function submitNewList(e, groupId) {
     e.preventDefault();
     if (!newListName.trim()) return;
     onCreateList(newListName.trim(), groupId);
     setNewListName("");
     setAddingList(false);
+    onClose();
   }
 
   function submitNewGroup(e) {
@@ -36,7 +52,7 @@ export default function Sidebar({ lists, groups, sharedLists = [], activeView, o
     const active = activeView.type === type;
     return (
       <button
-        onClick={() => onSelect({ type })}
+        onClick={() => select({ type })}
         className={`flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left text-sm ${
           active
             ? "bg-indigo-50 font-medium text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300"
@@ -54,7 +70,7 @@ export default function Sidebar({ lists, groups, sharedLists = [], activeView, o
     return (
       <button
         key={list.id}
-        onClick={() => onSelect({ type: "list", listId: list.id })}
+        onClick={() => select({ type: "list", listId: list.id })}
         className={`flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left text-sm ${
           active
             ? "bg-indigo-50 font-medium text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300"
@@ -72,7 +88,7 @@ export default function Sidebar({ lists, groups, sharedLists = [], activeView, o
     return (
       <button
         key={list.id}
-        onClick={() => onSelect({ type: "list", listId: list.id })}
+        onClick={() => select({ type: "list", listId: list.id })}
         className={`flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left text-sm ${
           active
             ? "bg-indigo-50 font-medium text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300"
@@ -87,7 +103,19 @@ export default function Sidebar({ lists, groups, sharedLists = [], activeView, o
   }
 
   return (
-    <nav className="w-56 shrink-0 space-y-4 border-r border-slate-200 pr-4 dark:border-slate-700">
+    <>
+      {open && (
+        <div
+          className="fixed inset-0 z-30 bg-black/40 md:hidden"
+          onClick={onClose}
+          aria-hidden="true"
+        />
+      )}
+      <nav
+        className={`fixed inset-y-0 left-0 z-40 w-72 space-y-4 overflow-y-auto bg-slate-50 p-4 shadow-xl transition-transform duration-200 ease-in-out dark:bg-slate-900 md:static md:z-auto md:w-56 md:shrink-0 md:translate-x-0 md:border-r md:border-slate-200 md:bg-transparent md:p-0 md:pr-4 md:shadow-none md:transition-none md:dark:border-slate-700 md:dark:bg-transparent ${
+          open ? "translate-x-0" : "-translate-x-full"
+        }`}
+      >
       <div className="space-y-0.5">
         {smartButton("my-day", "My Day", "☀")
         }
@@ -160,6 +188,7 @@ export default function Sidebar({ lists, groups, sharedLists = [], activeView, o
           </button>
         )}
       </div>
-    </nav>
+      </nav>
+    </>
   );
 }

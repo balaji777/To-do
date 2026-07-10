@@ -49,6 +49,7 @@ export default function TodoApp() {
   const [groups, setGroups] = useState([]);
   const [activeView, setActiveView] = useState({ type: "my-day" });
   const [detailTodoId, setDetailTodoId] = useState(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   function refreshCollab() {
     return api.getCollaborators(auth.token).then(setCollab).catch(() => {});
@@ -269,11 +270,20 @@ export default function TodoApp() {
           onSelect={setActiveView}
           onCreateList={handleCreateList}
           onCreateGroup={handleCreateGroup}
+          open={sidebarOpen}
+          onClose={() => setSidebarOpen(false)}
         />
 
         <div className="min-w-0 flex-1">
           <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2">
+              <button
+                onClick={() => setSidebarOpen(true)}
+                aria-label="Open menu"
+                className="rounded-md p-1.5 text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800 md:hidden"
+              >
+                ☰
+              </button>
               <h1 className="text-2xl font-semibold text-slate-900 dark:text-white">{viewTitle}</h1>
               {collab.myLists.length > 0 && (
                 <select
@@ -290,7 +300,7 @@ export default function TodoApp() {
                 </select>
               )}
             </div>
-            <div className="flex items-center gap-4">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2 sm:gap-x-4">
               {ownsActiveList && (
                 <button
                   onClick={() => setShowShareList(true)}

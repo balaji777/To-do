@@ -81,4 +81,27 @@ describe("Sidebar", () => {
     renderSidebar();
     expect(screen.queryByText("Shared with Me")).not.toBeInTheDocument();
   });
+
+  it("closes the mobile drawer after selecting a view", async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    const props = renderSidebar({ open: true, onClose });
+    await user.click(screen.getByRole("button", { name: /^important$/i }));
+    expect(props.onSelect).toHaveBeenCalledWith({ type: "important" });
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it("closes the mobile drawer when the backdrop is clicked", async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    renderSidebar({ open: true, onClose });
+    const backdrop = document.querySelector(".bg-black\\/40");
+    await user.click(backdrop);
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it("does not render a backdrop when the drawer is closed", () => {
+    renderSidebar({ open: false });
+    expect(document.querySelector(".bg-black\\/40")).not.toBeInTheDocument();
+  });
 });
