@@ -10,22 +10,6 @@ export const PRIORITY_TEXT_STYLES = {
   high: "text-rose-700 dark:text-rose-300",
 };
 
-export const TYPE_STYLES = {
-  bug: "bg-rose-50 dark:bg-rose-950/40",
-  feature: "bg-indigo-50 dark:bg-indigo-950/40",
-  chore: "bg-slate-100 dark:bg-slate-700",
-  task: "bg-sky-50 dark:bg-sky-950/40",
-};
-
-export const TYPE_TEXT_STYLES = {
-  bug: "text-rose-600 dark:text-rose-300",
-  feature: "text-indigo-600 dark:text-indigo-300",
-  chore: "text-slate-600 dark:text-slate-300",
-  task: "text-sky-600 dark:text-sky-300",
-};
-
-export const TYPE_LABELS = { bug: "Bug", feature: "Feature", chore: "Chore", task: "Task" };
-
 export const RECURRENCE_LABELS = {
   none: null,
   daily: "Repeats daily",

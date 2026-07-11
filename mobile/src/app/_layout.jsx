@@ -5,6 +5,7 @@ import { useColorScheme, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 
 import { AuthProvider, useAuth } from "../context/AuthContext";
+import { ListsProvider } from "../context/ListsContext";
 
 function RootLayoutNav() {
   const { auth, isLoading } = useAuth();
@@ -32,6 +33,7 @@ function RootLayoutNav() {
           name="(app)/add-edit-todo"
           options={{ presentation: "modal", headerShown: true, title: "Task" }}
         />
+        <Stack.Screen name="(app)/lists" options={{ presentation: "modal", headerShown: true, title: "Lists" }} />
         <Stack.Screen name="(app)/share" options={{ presentation: "modal", headerShown: true, title: "Share" }} />
       </Stack.Protected>
     </Stack>
@@ -45,7 +47,9 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <ThemeProvider value={colorScheme === "dark" ? DarkTheme : DefaultTheme}>
         <AuthProvider>
-          <RootLayoutNav />
+          <ListsProvider>
+            <RootLayoutNav />
+          </ListsProvider>
         </AuthProvider>
       </ThemeProvider>
     </GestureHandlerRootView>

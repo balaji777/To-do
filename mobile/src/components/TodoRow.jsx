@@ -1,14 +1,6 @@
 import { View, Text, Pressable } from "react-native";
 import { Swipeable } from "react-native-gesture-handler";
-import {
-  PRIORITY_STYLES,
-  PRIORITY_TEXT_STYLES,
-  TYPE_STYLES,
-  TYPE_TEXT_STYLES,
-  TYPE_LABELS,
-  RECURRENCE_LABELS,
-  isOverdue,
-} from "../constants/todoMeta";
+import { PRIORITY_STYLES, PRIORITY_TEXT_STYLES, RECURRENCE_LABELS, isOverdue } from "../constants/todoMeta";
 
 function DeleteAction({ onPress }) {
   return (
@@ -18,7 +10,7 @@ function DeleteAction({ onPress }) {
   );
 }
 
-export default function TodoRow({ todo, onToggle, onDelete, onPress }) {
+export default function TodoRow({ todo, onToggle, onDelete, onPress, onToggleImportant, currentUserId }) {
   return (
     <Swipeable renderRightActions={() => <DeleteAction onPress={() => onDelete(todo)} />} overshootRight={false}>
       <Pressable
@@ -48,18 +40,18 @@ export default function TodoRow({ todo, onToggle, onDelete, onPress }) {
               <Text className={`text-xs font-medium ${PRIORITY_TEXT_STYLES[todo.priority]}`}>{todo.priority}</Text>
             </View>
 
-            {todo.type && todo.type !== "task" ? (
-              <View className={`rounded-full px-2 py-0.5 ${TYPE_STYLES[todo.type]}`}>
-                <Text className={`text-xs font-medium ${TYPE_TEXT_STYLES[todo.type]}`}>
-                  {TYPE_LABELS[todo.type]}
-                </Text>
+            {todo.list_name ? (
+              <View className="rounded-full bg-slate-100 px-2 py-0.5 dark:bg-slate-700">
+                <Text className="text-xs text-slate-600 dark:text-slate-300">{todo.list_name}</Text>
               </View>
             ) : null}
 
-            {todo.category_name || todo.category ? (
-              <View className="rounded-full bg-slate-100 px-2 py-0.5 dark:bg-slate-700">
-                <Text className="text-xs text-slate-600 dark:text-slate-300">
-                  {todo.category_name || todo.category}
+            {todo.created_by ? (
+              <View className="rounded-full bg-indigo-50 px-2 py-0.5 dark:bg-indigo-950/40">
+                <Text className="text-xs text-indigo-600 dark:text-indigo-300">
+                  {todo.created_by === currentUserId
+                    ? "You"
+                    : todo.created_by_nickname || todo.created_by_username || "Collaborator"}
                 </Text>
               </View>
             ) : null}
@@ -79,6 +71,14 @@ export default function TodoRow({ todo, onToggle, onDelete, onPress }) {
             </View>
           ) : null}
         </View>
+
+        {onToggleImportant ? (
+          <Pressable onPress={() => onToggleImportant(todo)} hitSlop={8} className="mt-0.5">
+            <Text className={todo.important ? "text-lg text-amber-500" : "text-lg text-slate-300 dark:text-slate-600"}>
+              {todo.important ? "★" : "☆"}
+            </Text>
+          </Pressable>
+        ) : null}
       </Pressable>
     </Swipeable>
   );

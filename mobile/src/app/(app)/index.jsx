@@ -3,13 +3,26 @@ import { View, Text, TextInput, FlatList, Pressable, RefreshControl, ActivityInd
 import { useRouter, useFocusEffect } from "expo-router";
 import { api } from "../../api/client";
 import { useAuth } from "../../context/AuthContext";
+import { useLists } from "../../context/ListsContext";
 import TodoRow from "../../components/TodoRow";
+import InviteBanner from "../../components/InviteBanner";
 import { visibleTodos } from "../../constants/todoMeta";
+import { viewTitle, canQuickAdd, createPayloadFor, fetchTodosForView } from "../../constants/views";
 
 export default function TodoListScreen() {
   const { auth, logout } = useAuth();
   const router = useRouter();
+  const {
+    lists,
+    sharedWithMe,
+    invitesReceived,
+    activeView,
+    refreshListShares,
+    acceptListShareInvite,
+    declineListShareInvite,
+  } = useLists();
   const [todos, setTodos] = useState([]);
+  const [title, setTitle] = useState("");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
@@ -18,18 +31,18 @@ export default function TodoListScreen() {
   const loadTodos = useCallback(
     (opts = {}) => {
       if (!opts.silent) setLoading(true);
-      return api
-        .getTodos(auth.token)
+      return fetchTodosForView(api, auth.token, activeView)
         .then(setTodos)
         .catch((err) => setError(err.message))
         .finally(() => setLoading(false));
     },
-    [auth.token]
+    [auth.token, activeView]
   );
 
   useFocusEffect(
     useCallback(() => {
       loadTodos({ silent: todos.length > 0 });
+      refreshListShares();
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [loadTodos])
   );
@@ -40,14 +53,30 @@ export default function TodoListScreen() {
     setRefreshing(false);
   }
 
+  async function handleAdd() {
+    if (!title.trim()) return;
+    const payload = { title: title.trim(), ...createPayloadFor(activeView, lists) };
+    try {
+      const todo = await api.addTodo(auth.token, payload);
+      setTodos((prev) => [todo, ...prev]);
+      setTitle("");
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
   async function toggleDone(todo) {
     const updated = await api.updateTodo(auth.token, todo.id, { done: !todo.done });
     if (!todo.done && todo.recurrence !== "none" && todo.due_date) {
-      const refreshed = await api.getTodos(auth.token);
-      setTodos(refreshed);
+      await loadTodos({ silent: true });
     } else {
       setTodos((prev) => prev.map((t) => (t.id === todo.id ? updated : t)));
     }
+  }
+
+  async function toggleImportant(todo) {
+    await api.updateTodo(auth.token, todo.id, { important: !todo.important });
+    await loadTodos({ silent: true });
   }
 
   async function removeTodo(todo) {
@@ -61,16 +90,40 @@ export default function TodoListScreen() {
 
   const remaining = todos.filter((t) => !t.done).length;
   const filtered = useMemo(() => visibleTodos(todos, { search }), [todos, search]);
+  const headerTitle = viewTitle(activeView, lists, sharedWithMe);
+  const canAdd = canQuickAdd(activeView);
+  const ownsActiveList = activeView.type === "list" && lists.some((l) => l.id === activeView.listId);
 
   return (
     <View className="flex-1 bg-slate-50 dark:bg-slate-900">
       <View className="flex-row items-center justify-between border-b border-slate-200 px-4 pb-3 pt-14 dark:border-slate-700">
-        <Text className="text-xl font-semibold text-slate-900 dark:text-white">
-          {auth.nickname || auth.username}&apos;s tasks
-        </Text>
-        <Pressable onPress={logout}>
-          <Text className="text-sm text-slate-500 dark:text-slate-400">Log out</Text>
+        <Pressable
+          onPress={() => router.push("/(app)/lists")}
+          className="flex-1 flex-row items-center gap-1"
+          hitSlop={8}
+        >
+          <Text className="text-xl font-semibold text-slate-900 dark:text-white" numberOfLines={1}>
+            {headerTitle}
+          </Text>
+          <Text className="text-slate-400">▾</Text>
         </Pressable>
+        <View className="flex-row items-center gap-4">
+          {ownsActiveList ? (
+            <Pressable
+              onPress={() =>
+                router.push({
+                  pathname: "/(app)/share",
+                  params: { listId: activeView.listId, listName: headerTitle },
+                })
+              }
+            >
+              <Text className="text-sm text-indigo-600 dark:text-indigo-400">Share</Text>
+            </Pressable>
+          ) : null}
+          <Pressable onPress={logout}>
+            <Text className="text-sm text-slate-500 dark:text-slate-400">Log out</Text>
+          </Pressable>
+        </View>
       </View>
 
       <View className="px-4 pt-3">
@@ -81,6 +134,32 @@ export default function TodoListScreen() {
           className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 dark:border-slate-600 dark:text-white"
         />
       </View>
+
+      {invitesReceived.length > 0 ? (
+        <View className="px-4 pt-3">
+          {invitesReceived.map((invite) => (
+            <InviteBanner
+              key={invite.share_id}
+              invite={invite}
+              onAccept={acceptListShareInvite}
+              onDecline={declineListShareInvite}
+            />
+          ))}
+        </View>
+      ) : null}
+
+      {canAdd ? (
+        <View className="px-4 pt-3">
+          <TextInput
+            value={title}
+            onChangeText={setTitle}
+            onSubmitEditing={handleAdd}
+            placeholder="Add a task"
+            returnKeyType="done"
+            className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 dark:border-slate-600 dark:text-white"
+          />
+        </View>
+      ) : null}
 
       {error ? (
         <Text className="px-4 pt-3 text-sm text-red-600 dark:text-red-400">{error}</Text>
@@ -95,7 +174,14 @@ export default function TodoListScreen() {
           data={filtered}
           keyExtractor={(item) => String(item.id)}
           renderItem={({ item }) => (
-            <TodoRow todo={item} onToggle={toggleDone} onDelete={removeTodo} onPress={openTodo} />
+            <TodoRow
+              todo={item}
+              onToggle={toggleDone}
+              onDelete={removeTodo}
+              onPress={openTodo}
+              onToggleImportant={toggleImportant}
+              currentUserId={auth.id}
+            />
           )}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
           ListEmptyComponent={
@@ -115,12 +201,14 @@ export default function TodoListScreen() {
         />
       )}
 
-      <Pressable
-        onPress={() => router.push({ pathname: "/(app)/add-edit-todo" })}
-        className="absolute bottom-8 right-6 h-14 w-14 items-center justify-center rounded-full bg-indigo-600 shadow-lg"
-      >
-        <Text className="text-2xl font-light text-white">+</Text>
-      </Pressable>
+      {canAdd ? (
+        <Pressable
+          onPress={() => router.push({ pathname: "/(app)/add-edit-todo" })}
+          className="absolute bottom-8 right-6 h-14 w-14 items-center justify-center rounded-full bg-indigo-600 shadow-lg"
+        >
+          <Text className="text-2xl font-light text-white">+</Text>
+        </Pressable>
+      ) : null}
     </View>
   );
 }
