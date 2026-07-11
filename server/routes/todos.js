@@ -97,9 +97,12 @@ function hydrateTodos(todos) {
   }));
 }
 
-const TODO_SELECT = "SELECT todos.* FROM todos";
-const TODO_SELECT_WITH_LIST = `SELECT todos.*, lists.name AS list_name
-                                FROM todos JOIN lists ON lists.id = todos.list_id`;
+const TODO_SELECT = `SELECT todos.*, creator.username AS created_by_username, creator.nickname AS created_by_nickname
+                      FROM todos LEFT JOIN users AS creator ON creator.id = todos.created_by`;
+const TODO_SELECT_WITH_LIST = `SELECT todos.*, lists.name AS list_name,
+                                       creator.username AS created_by_username, creator.nickname AS created_by_nickname
+                                FROM todos JOIN lists ON lists.id = todos.list_id
+                                LEFT JOIN users AS creator ON creator.id = todos.created_by`;
 
 function getTodosForList(listId) {
   const todos = db.prepare(`${TODO_SELECT} WHERE todos.list_id = ? ORDER BY todos.created_at DESC`).all(listId);
@@ -228,9 +231,12 @@ router.post("/", (req, res) => {
 
   const todo = getHydratedTodo(result.lastInsertRowid);
 
-  listMembers(list.id).forEach((member) =>
-    sendTaskAddedEmail(member, todo).catch((err) => console.error("Failed to send task-added email:", err))
-  );
+  const addedBy = db.prepare("SELECT * FROM users WHERE id = ?").get(req.userId);
+  listMembers(list.id)
+    .filter((member) => member.id !== req.userId)
+    .forEach((member) =>
+      sendTaskAddedEmail(member, todo, addedBy).catch((err) => console.error("Failed to send task-added email:", err))
+    );
 
   res.status(201).json(todo);
 });
@@ -310,9 +316,12 @@ router.delete("/:id", (req, res) => {
   db.prepare("DELETE FROM subtasks WHERE todo_id = ?").run(todo.id);
   db.prepare("DELETE FROM todos WHERE id = ?").run(todo.id);
 
-  listMembers(todo.list_id).forEach((member) =>
-    sendTaskDeletedEmail(member, todo).catch((err) => console.error("Failed to send task-deleted email:", err))
-  );
+  const deletedBy = db.prepare("SELECT * FROM users WHERE id = ?").get(req.userId);
+  listMembers(todo.list_id)
+    .filter((member) => member.id !== req.userId)
+    .forEach((member) =>
+      sendTaskDeletedEmail(member, todo, deletedBy).catch((err) => console.error("Failed to send task-deleted email:", err))
+    );
 
   res.status(204).end();
 });

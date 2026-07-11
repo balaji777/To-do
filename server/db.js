@@ -172,6 +172,7 @@ export function createDb(dbPath) {
   ensureColumn("users", "google_id", "TEXT");
   ensureColumn("users", "nickname", "TEXT");
   ensureColumn("users", "email_verified", "INTEGER NOT NULL DEFAULT 0");
+  ensureColumn("users", "has_seen_onboarding", "INTEGER NOT NULL DEFAULT 0");
   ensureColumn("users", "verification_token", "TEXT");
   ensureColumn("users", "verification_expires_at", "TEXT");
   ensureColumn("todos", "due_date", "TEXT");

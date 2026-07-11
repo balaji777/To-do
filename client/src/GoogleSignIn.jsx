@@ -15,8 +15,8 @@ export default function GoogleSignIn() {
     async function handleCredential(response) {
       setError("");
       try {
-        const { token, username, nickname, id } = await api.googleLogin(response.credential);
-        login(token, username, nickname, id);
+        const { token, username, nickname, id, has_seen_onboarding } = await api.googleLogin(response.credential);
+        login(token, username, nickname, id, has_seen_onboarding);
       } catch (err) {
         setError(err.message);
       }

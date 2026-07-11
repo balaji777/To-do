@@ -151,3 +151,30 @@ describe("PATCH /api/auth/nickname", () => {
     expect(res.status).toBe(401);
   });
 });
+
+describe("PATCH /api/auth/onboarding-seen", () => {
+  let app;
+
+  beforeEach(() => {
+    app = buildApp();
+  });
+
+  it("marks onboarding as seen for the caller", async () => {
+    const user = seedUser();
+    const token = signTestToken(user.id);
+    expect(user.has_seen_onboarding).toBe(0);
+
+    const res = await request(app)
+      .patch("/api/auth/onboarding-seen")
+      .set("Authorization", `Bearer ${token}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.has_seen_onboarding).toBe(true);
+    expect(db.prepare("SELECT has_seen_onboarding FROM users WHERE id = ?").get(user.id).has_seen_onboarding).toBe(1);
+  });
+
+  it("requires authentication", async () => {
+    const res = await request(app).patch("/api/auth/onboarding-seen");
+    expect(res.status).toBe(401);
+  });
+});

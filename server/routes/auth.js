@@ -83,6 +83,7 @@ router.post("/google", async (req, res) => {
     email: user.email,
     nickname: user.nickname,
     needsNickname: !user.nickname,
+    has_seen_onboarding: !!user.has_seen_onboarding,
   });
 });
 
@@ -157,6 +158,7 @@ router.post("/login", async (req, res) => {
     email: user.email,
     nickname: user.nickname,
     needsNickname: !user.nickname,
+    has_seen_onboarding: !!user.has_seen_onboarding,
   });
 });
 
@@ -206,6 +208,11 @@ router.patch("/nickname", requireAuth, (req, res) => {
 
   db.prepare("UPDATE users SET nickname = ? WHERE id = ?").run(nickname, req.userId);
   res.json({ nickname });
+});
+
+router.patch("/onboarding-seen", requireAuth, (req, res) => {
+  db.prepare("UPDATE users SET has_seen_onboarding = 1 WHERE id = ?").run(req.userId);
+  res.json({ has_seen_onboarding: true });
 });
 
 export default router;

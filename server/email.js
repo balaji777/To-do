@@ -79,7 +79,12 @@ function greetingName(user) {
   return escapeHtml(user.nickname || user.username);
 }
 
-export function sendTaskAddedEmail(user, todo) {
+function actorClause(user, actor, verb) {
+  if (!actor || actor.id === user.id) return `you ${verb} this`;
+  return `<strong>${greetingName(actor)}</strong> ${verb} this`;
+}
+
+export function sendTaskAddedEmail(user, todo, actor) {
   const title = escapeHtml(todo.title);
   return send({
     to: user.email,
@@ -87,7 +92,7 @@ export function sendTaskAddedEmail(user, todo) {
     html: layout({
       heading: "New task added",
       bodyHtml: `
-        <p style="margin:0 0 8px;color:#334155;">Hi ${greetingName(user)}, this was just added to your list:</p>
+        <p style="margin:0 0 8px;color:#334155;">Hi ${greetingName(user)}, ${actorClause(user, actor, "added")} to your list:</p>
         <p style="margin:0;font-size:17px;font-weight:600;color:#0f172a;">${title}</p>
         ${taskMetaTable(todo)}
       `,
@@ -95,7 +100,7 @@ export function sendTaskAddedEmail(user, todo) {
   });
 }
 
-export function sendTaskDeletedEmail(user, todo) {
+export function sendTaskDeletedEmail(user, todo, actor) {
   const title = escapeHtml(todo.title);
   return send({
     to: user.email,
@@ -103,7 +108,7 @@ export function sendTaskDeletedEmail(user, todo) {
     html: layout({
       heading: "Task deleted",
       bodyHtml: `
-        <p style="margin:0 0 8px;color:#334155;">Hi ${greetingName(user)}, this task was removed from your list:</p>
+        <p style="margin:0 0 8px;color:#334155;">Hi ${greetingName(user)}, ${actorClause(user, actor, "removed")} from your list:</p>
         <p style="margin:0;font-size:17px;font-weight:600;color:#94a3b8;text-decoration:line-through;">${title}</p>
         ${taskMetaTable(todo)}
       `,
@@ -189,6 +194,23 @@ export function sendVerificationEmail(user, token) {
           <a href="${verifyUrl}" style="display:inline-block;background:#4f46e5;color:#ffffff;padding:10px 20px;border-radius:8px;font-weight:600;text-decoration:none;">Verify email</a>
         </p>
         <p style="margin:16px 0 0;font-size:12px;color:#94a3b8;">This link expires in 24 hours.</p>
+      `,
+    }),
+  });
+}
+
+export function sendExpenseAddedEmail(user, expense, actor) {
+  const description = escapeHtml(expense.description);
+  const amount = `₹${Number(expense.amount).toFixed(2)}`;
+  return send({
+    to: user.email,
+    subject: `New expense: ${expense.description}`,
+    html: layout({
+      heading: "New shared expense",
+      bodyHtml: `
+        <p style="margin:0 0 8px;color:#334155;">Hi ${greetingName(user)}, ${actorClause(user, actor, "added")} an expense:</p>
+        <p style="margin:0;font-size:17px;font-weight:600;color:#0f172a;">${description} — ${amount}</p>
+        <p style="margin:16px 0 0;color:#334155;">Check Household → Expenses to see your updated balance and settle up.</p>
       `,
     }),
   });

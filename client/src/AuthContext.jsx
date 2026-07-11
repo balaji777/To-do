@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useCallback } from "react";
+import { api } from "./api";
 
 const AuthContext = createContext(null);
 
@@ -8,17 +9,25 @@ export function AuthProvider({ children }) {
     const username = localStorage.getItem("username");
     const nickname = localStorage.getItem("nickname");
     const id = localStorage.getItem("id");
+    const hasSeenOnboarding = localStorage.getItem("hasSeenOnboarding");
     return token && username
-      ? { token, username, nickname: nickname || "", id: id ? Number(id) : null }
+      ? {
+          token,
+          username,
+          nickname: nickname || "",
+          id: id ? Number(id) : null,
+          hasSeenOnboarding: hasSeenOnboarding === "true",
+        }
       : null;
   });
 
-  const login = useCallback((token, username, nickname = "", id = null) => {
+  const login = useCallback((token, username, nickname = "", id = null, hasSeenOnboarding = false) => {
     localStorage.setItem("token", token);
     localStorage.setItem("username", username);
     localStorage.setItem("nickname", nickname || "");
+    localStorage.setItem("hasSeenOnboarding", String(!!hasSeenOnboarding));
     if (id != null) localStorage.setItem("id", String(id));
-    setAuth({ token, username, nickname: nickname || "", id });
+    setAuth({ token, username, nickname: nickname || "", id, hasSeenOnboarding: !!hasSeenOnboarding });
   }, []);
 
   const setNickname = useCallback((nickname) => {
@@ -26,11 +35,18 @@ export function AuthProvider({ children }) {
     setAuth((prev) => (prev ? { ...prev, nickname } : prev));
   }, []);
 
+  const markOnboardingSeen = useCallback(() => {
+    setAuth((prev) => (prev ? { ...prev, hasSeenOnboarding: true } : prev));
+    localStorage.setItem("hasSeenOnboarding", "true");
+    api.markOnboardingSeen(localStorage.getItem("token")).catch(() => {});
+  }, []);
+
   const logout = useCallback(() => {
     localStorage.removeItem("token");
     localStorage.removeItem("username");
     localStorage.removeItem("nickname");
     localStorage.removeItem("id");
+    localStorage.removeItem("hasSeenOnboarding");
     setAuth(null);
     // Clear the offline todos cache so a network blip after logout can't serve
     // this user's cached data to whoever logs in next on the same device.
@@ -40,7 +56,7 @@ export function AuthProvider({ children }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ auth, login, logout, setNickname }}>
+    <AuthContext.Provider value={{ auth, login, logout, setNickname, markOnboardingSeen }}>
       {children}
     </AuthContext.Provider>
   );

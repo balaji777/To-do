@@ -30,6 +30,7 @@ export const api = {
   verifyEmail: (token) => request(`/auth/verify-email?token=${encodeURIComponent(token)}`),
   resendVerification: (email) => request("/auth/resend-verification", { method: "POST", body: { email } }),
   setNickname: (token, nickname) => request("/auth/nickname", { method: "PATCH", body: { nickname }, token }),
+  markOnboardingSeen: (token) => request("/auth/onboarding-seen", { method: "PATCH", token }),
   getTodos: (token, listId) => request(`/todos${listId ? `?list_id=${listId}` : ""}`, { token }),
   getMyDay: (token) => request("/todos/my-day", { token }),
   getImportant: (token) => request("/todos/important", { token }),

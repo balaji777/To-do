@@ -7,6 +7,8 @@ import ShareListModal from "./ShareListModal";
 import ExpensesModal from "./ExpensesModal";
 import Sidebar from "./Sidebar";
 import TaskDetail from "./TaskDetail";
+import OnboardingPopup from "./OnboardingPopup";
+import AboutModal from "./AboutModal";
 
 const VIEW_TITLES = {
   "my-day": "My Day",
@@ -40,10 +42,10 @@ export default function TodoApp() {
   const [householdMembers, setHouseholdMembers] = useState([]);
   const [showShare, setShowShare] = useState(false);
   const [showExpenses, setShowExpenses] = useState(false);
+  const [showAbout, setShowAbout] = useState(false);
 
   // Per-list sharing: a specific list shown inline in the sidebar under "Shared with Me".
   const [listShares, setListShares] = useState({ sharedWithMe: [], invitesReceived: [] });
-  const [taskMembers, setTaskMembers] = useState([]);
   const [showShareList, setShowShareList] = useState(false);
 
   const [lists, setLists] = useState([]);
@@ -77,17 +79,6 @@ export default function TodoApp() {
       })
       .catch((err) => setError(err.message));
   }, [auth.token]);
-
-  useEffect(() => {
-    if (activeView.type !== "list") {
-      setTaskMembers([]);
-      return;
-    }
-    api
-      .getListShares(auth.token, activeView.listId)
-      .then((data) => setTaskMembers([data.owner, ...data.shares.filter((s) => s.status === "accepted")]))
-      .catch(() => setTaskMembers([]));
-  }, [auth.token, activeView]);
 
   function fetchTodosForView() {
     if (activeView.type === "my-day") return api.getMyDay(auth.token);
@@ -300,12 +291,6 @@ export default function TodoApp() {
   const canQuickAdd = activeView.type === "list" || activeView.type === "my-day";
   const ownsActiveList = activeView.type === "list" && lists.some((l) => l.id === activeView.listId);
 
-  function memberName(userId) {
-    const member = taskMembers.find((m) => m.id === userId);
-    if (!member) return "Collaborator";
-    return member.nickname || member.username;
-  }
-
   const viewTitle =
     VIEW_TITLES[activeView.type] ||
     lists.find((l) => l.id === activeView.listId)?.name ||
@@ -382,11 +367,21 @@ export default function TodoApp() {
               ) : (
                 <button
                   onClick={() => setShowShare(true)}
-                  className="text-sm text-indigo-600 hover:text-indigo-500 dark:text-indigo-400"
+                  className={`rounded-full text-sm text-indigo-600 hover:text-indigo-500 dark:text-indigo-400 ${
+                    !auth.hasSeenOnboarding ? "animate-pulse ring-2 ring-indigo-400 ring-offset-2 dark:ring-offset-slate-900" : ""
+                  }`}
                 >
                   Household
                 </button>
               )}
+              <button
+                onClick={() => setShowAbout(true)}
+                className={`rounded-full text-sm text-indigo-600 hover:text-indigo-500 dark:text-indigo-400 ${
+                  !auth.hasSeenOnboarding ? "animate-pulse ring-2 ring-indigo-400 ring-offset-2 dark:ring-offset-slate-900" : ""
+                }`}
+              >
+                About
+              </button>
               <ThemeToggle />
               <button onClick={logout} className="text-sm text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200">
                 Log out
@@ -531,9 +526,11 @@ export default function TodoApp() {
                           {todo.list_name}
                         </span>
                       )}
-                      {taskMembers.length > 1 && todo.created_by && (
+                      {todo.created_by && (
                         <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-xs text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-300">
-                          {todo.created_by === auth.id ? "You" : memberName(todo.created_by)}
+                          {todo.created_by === auth.id
+                            ? "You"
+                            : todo.created_by_nickname || todo.created_by_username || "Collaborator"}
                         </span>
                       )}
                       {todo.subtasks?.length > 0 && (
@@ -606,6 +603,10 @@ export default function TodoApp() {
           onDelete={handleDetailDelete}
         />
       )}
+
+      {showAbout && <AboutModal onClose={() => setShowAbout(false)} />}
+
+      {!auth.hasSeenOnboarding && <OnboardingPopup />}
     </div>
   );
 }

@@ -1,7 +1,13 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import request from "supertest";
 import { buildApp, seedUser, signTestToken } from "../helpers.js";
 import db from "../../db.js";
+import { sendExpenseAddedEmail } from "../../email.js";
+
+vi.mock("../../email.js", async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, sendExpenseAddedEmail: vi.fn().mockResolvedValue() };
+});
 
 describe("expenses routes", () => {
   let app;
@@ -187,6 +193,27 @@ describe("expenses routes", () => {
         amount: 10,
       });
       expect(res.status).toBe(400);
+    });
+  });
+
+  describe("expense-added email notifications", () => {
+    beforeEach(() => {
+      sendExpenseAddedEmail.mockClear();
+    });
+
+    it("emails the other member but not whoever added the expense", async () => {
+      await as(ownerToken, request(app).post("/api/expenses")).send({
+        description: "Dinner",
+        amount: 100,
+        paid_by: owner.id,
+      });
+
+      expect(sendExpenseAddedEmail).toHaveBeenCalledTimes(1);
+      expect(sendExpenseAddedEmail).toHaveBeenCalledWith(
+        expect.objectContaining({ id: friend.id }),
+        expect.objectContaining({ description: "Dinner" }),
+        expect.objectContaining({ id: owner.id })
+      );
     });
   });
 });

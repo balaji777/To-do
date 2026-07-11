@@ -6,6 +6,7 @@ import { api } from "../api";
 
 vi.mock("../api", () => ({
   api: {
+    markOnboardingSeen: vi.fn(),
     getTodos: vi.fn(),
     getMyDay: vi.fn(),
     getImportant: vi.fn(),
@@ -47,11 +48,12 @@ vi.mock("../api", () => ({
 
 const DEFAULT_LIST = { id: 1, name: "Tasks", group_id: null, is_default: 1, ordering: 0 };
 
-function renderApp() {
+function renderApp({ hasSeenOnboarding = true } = {}) {
   localStorage.setItem("token", "tok");
   localStorage.setItem("username", "alice");
   localStorage.setItem("nickname", "Alice");
   localStorage.setItem("id", "1");
+  localStorage.setItem("hasSeenOnboarding", String(hasSeenOnboarding));
   return render(
     <AuthProvider>
       <TodoApp />
@@ -91,6 +93,7 @@ beforeEach(() => {
   api.getMyListShares.mockResolvedValue({ sharedWithMe: [], invitesReceived: [] });
   api.getListShares.mockResolvedValue({ owner: { id: 1, username: "alice", nickname: "Alice" }, shares: [] });
   api.getAttachments.mockResolvedValue([]);
+  api.markOnboardingSeen.mockResolvedValue({ has_seen_onboarding: true });
 });
 
 describe("TodoApp", () => {
@@ -98,6 +101,32 @@ describe("TodoApp", () => {
     renderApp();
     expect(screen.getByText(/loading/i)).toBeInTheDocument();
     await waitFor(() => expect(screen.getByText(/no tasks match/i)).toBeInTheDocument());
+  });
+
+  it("shows the onboarding popup for a first-time user and dismisses it on 'Got it'", async () => {
+    const user = userEvent.setup();
+    renderApp({ hasSeenOnboarding: false });
+
+    expect(await screen.findByText(/welcome to planora/i)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /got it/i }));
+
+    expect(api.markOnboardingSeen).toHaveBeenCalledWith("tok");
+    await waitFor(() => expect(screen.queryByText(/welcome to planora/i)).not.toBeInTheDocument());
+  });
+
+  it("doesn't show the onboarding popup for a returning user", async () => {
+    renderApp({ hasSeenOnboarding: true });
+    await waitFor(() => expect(screen.getByText(/no tasks match/i)).toBeInTheDocument());
+    expect(screen.queryByText(/welcome to planora/i)).not.toBeInTheDocument();
+  });
+
+  it("opens the About modal from the header link", async () => {
+    const user = userEvent.setup();
+    renderApp();
+    await waitFor(() => expect(screen.getByText(/no tasks match/i)).toBeInTheDocument());
+
+    await user.click(screen.getByRole("button", { name: /^about$/i }));
+    expect(await screen.findByText(/about planora/i)).toBeInTheDocument();
   });
 
   it("renders fetched todos in My Day by default", async () => {
@@ -135,6 +164,29 @@ describe("TodoApp", () => {
     await user.click(checkbox);
 
     expect(api.updateTodo).toHaveBeenCalledWith("tok", todo.id, { done: true });
+  });
+
+  it("shows who added a todo, even on a solo list with no other members", async () => {
+    const todo = baseTodo({ title: "Mine", created_by: 1 });
+    api.getMyDay.mockResolvedValue([todo]);
+    renderApp();
+
+    const todoText = await screen.findByText("Mine");
+    expect(within(todoText.closest("li")).getByText("You")).toBeInTheDocument();
+  });
+
+  it("shows the creator's nickname when someone else added the todo", async () => {
+    const todo = baseTodo({
+      title: "Shared by Bob",
+      created_by: 2,
+      created_by_username: "bob",
+      created_by_nickname: "Bobby",
+    });
+    api.getMyDay.mockResolvedValue([todo]);
+    renderApp();
+
+    const todoText = await screen.findByText("Shared by Bob");
+    expect(within(todoText.closest("li")).getByText("Bobby")).toBeInTheDocument();
   });
 
   it("stars a todo as important", async () => {

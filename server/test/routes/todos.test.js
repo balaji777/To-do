@@ -1,7 +1,13 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import request from "supertest";
 import { buildApp, seedUser, seedList, getDefaultList, seedListShare, signTestToken } from "../helpers.js";
 import db from "../../db.js";
+import { sendTaskAddedEmail, sendTaskDeletedEmail } from "../../email.js";
+
+vi.mock("../../email.js", async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, sendTaskAddedEmail: vi.fn().mockResolvedValue(), sendTaskDeletedEmail: vi.fn().mockResolvedValue() };
+});
 
 describe("todos routes", () => {
   let app;
@@ -101,6 +107,13 @@ describe("todos routes", () => {
       const res = await authed(request(app).post("/api/todos")).send({ title: "x" });
       expect(res.body.subtasks).toEqual([]);
     });
+
+    it("includes the creator's username and nickname", async () => {
+      const res = await authed(request(app).post("/api/todos")).send({ title: "x" });
+      expect(res.body.created_by).toBe(user.id);
+      expect(res.body.created_by_username).toBe(user.username);
+      expect(res.body.created_by_nickname).toBe(user.nickname);
+    });
   });
 
   describe("GET /api/todos", () => {
@@ -175,6 +188,14 @@ describe("todos routes", () => {
       expect(res.status).toBe(200);
       expect(res.body).toHaveLength(1);
       expect(res.body[0].title).toBe("In My Day");
+    });
+
+    it("GET /api/todos/my-day includes the creator's username and nickname", async () => {
+      await authed(request(app).post("/api/todos")).send({ title: "In My Day", my_day: true });
+
+      const res = await authed(request(app).get("/api/todos/my-day"));
+      expect(res.body[0].created_by_username).toBe(user.username);
+      expect(res.body[0].created_by_nickname).toBe(user.nickname);
     });
 
     it("GET /api/todos/important returns only starred, unfinished todos", async () => {
@@ -474,6 +495,50 @@ describe("todos routes", () => {
 
       const res = await authed(request(app).delete(`/api/todos/${created.body.id}`));
       expect(res.status).toBe(404);
+    });
+  });
+
+  describe("task email notifications", () => {
+    beforeEach(() => {
+      sendTaskAddedEmail.mockClear();
+      sendTaskDeletedEmail.mockClear();
+    });
+
+    it("does not email the person who added the task, but does email other list members", async () => {
+      const other = seedUser();
+      const list = seedList(user.id, { name: "Shared" });
+      seedListShare(list.id, other.id, "accepted");
+
+      await authed(request(app).post("/api/todos")).send({ title: "New task", list_id: list.id });
+
+      expect(sendTaskAddedEmail).toHaveBeenCalledTimes(1);
+      expect(sendTaskAddedEmail).toHaveBeenCalledWith(
+        expect.objectContaining({ id: other.id }),
+        expect.objectContaining({ title: "New task" }),
+        expect.objectContaining({ id: user.id })
+      );
+    });
+
+    it("emails no one when the caller is the only member of the list", async () => {
+      await authed(request(app).post("/api/todos")).send({ title: "Solo task" });
+      expect(sendTaskAddedEmail).not.toHaveBeenCalled();
+    });
+
+    it("does not email the person who deleted the task, but does email other list members", async () => {
+      const other = seedUser();
+      const list = seedList(user.id, { name: "Shared" });
+      seedListShare(list.id, other.id, "accepted");
+      const created = await authed(request(app).post("/api/todos")).send({ title: "To delete", list_id: list.id });
+      sendTaskAddedEmail.mockClear();
+
+      await authed(request(app).delete(`/api/todos/${created.body.id}`));
+
+      expect(sendTaskDeletedEmail).toHaveBeenCalledTimes(1);
+      expect(sendTaskDeletedEmail).toHaveBeenCalledWith(
+        expect.objectContaining({ id: other.id }),
+        expect.objectContaining({ id: created.body.id }),
+        expect.objectContaining({ id: user.id })
+      );
     });
   });
 });

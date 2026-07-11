@@ -2,6 +2,7 @@ import { Router } from "express";
 import db from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
 import { hasListAccess } from "./todos.js";
+import { sendExpenseAddedEmail } from "../email.js";
 
 const router = Router();
 
@@ -176,7 +177,19 @@ router.post("/", (req, res) => {
   })();
 
   const expense = db.prepare("SELECT * FROM expenses WHERE id = ?").get(expenseId);
-  res.status(201).json(hydrateExpense(expense));
+  const hydrated = hydrateExpense(expense);
+
+  const addedBy = db.prepare("SELECT * FROM users WHERE id = ?").get(req.userId);
+  const recipients = members
+    .filter((id) => id !== req.userId)
+    .map((id) => db.prepare("SELECT * FROM users WHERE id = ?").get(id));
+  recipients.forEach((recipient) =>
+    sendExpenseAddedEmail(recipient, hydrated, addedBy).catch((err) =>
+      console.error("Failed to send expense-added email:", err)
+    )
+  );
+
+  res.status(201).json(hydrated);
 });
 
 router.delete("/:id", (req, res) => {

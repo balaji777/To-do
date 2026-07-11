@@ -14,8 +14,8 @@ export default function LoginForm({ onUnverified }) {
     setError("");
     setSubmitting(true);
     try {
-      const { token, username, nickname, id } = await api.login(email.trim(), password);
-      login(token, username, nickname, id);
+      const { token, username, nickname, id, has_seen_onboarding } = await api.login(email.trim(), password);
+      login(token, username, nickname, id, has_seen_onboarding);
     } catch (err) {
       if (err.code === "EMAIL_NOT_VERIFIED") {
         onUnverified(email.trim());
